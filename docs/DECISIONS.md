@@ -47,3 +47,26 @@ real requirement at M3 — revisit then. Drizzle/SQL kept compatible with PG16.
 scripts/seed.ts imports `hashPassword` from better-auth/crypto so seeded
 credential rows are indistinguishable from signup-created ones; no test-only
 auth backdoors.
+
+## ADR-0009 (2026-07-21) — GUC-as-credential RLS pattern for pre-org lookups
+Three flows must read tenant rows before an org context exists: login
+(membership list), invite acceptance (token), Stripe webhooks (customer id).
+Each gets a dedicated RLS policy keyed on a transaction-local GUC whose value
+IS the credential (app.user_id from the session, app.invite_token_hash from
+the presented link, app.stripe_customer_id from a signature-verified event).
+Each policy exposes at most the rows that credential legitimately entitles.
+No SECURITY DEFINER functions, no RLS bypass role.
+
+## ADR-0010 (2026-07-21) — Checkout success-page sync alongside webhooks
+Webhooks are the authoritative billing signal, but dev machines without the
+Stripe CLI (and brief webhook outages in prod) would leave org status stale
+after a successful Checkout. The billing page's success redirect re-fetches
+the session server-side (verifying client_reference_id === org) and syncs.
+Idempotent with the webhook path.
+
+## ADR-0011 (2026-07-21) — Per-seat billing implemented as specced; price flagged
+Spec §1: subscription quantity = active staff seats. Implemented (checkout
+quantity, sync on membership changes, immediate proration on deactivation).
+The customer-created Stripe price is $300/month, which per-seat may not be
+the intent — flagged in PROGRESS.md for Joey; changing the amount is a
+Stripe-dashboard-only operation.

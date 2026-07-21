@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { OrgScope, listMembershipsForUser } from "@/db/scoped";
+import type { OrgSettings } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import type { Actor, Role } from "@/lib/permissions";
 
@@ -12,8 +13,34 @@ export type StaffContext = {
   role: Role;
   orgId: string;
   orgName: string;
+  timezone: string;
+  subscriptionStatus: "trialing" | "active" | "past_due" | "canceled";
+  trialEndsAt: Date | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  orgSettings: OrgSettings;
+  /** Lapsed subscription or expired unsubscribed trial ⇒ writes blocked (grace mode). */
+  readOnly: boolean;
   scope: OrgScope;
 };
+
+export function computeReadOnly(org: {
+  subscriptionStatus: "trialing" | "active" | "past_due" | "canceled";
+  trialEndsAt: Date | null;
+  stripeSubscriptionId: string | null;
+}): boolean {
+  if (org.subscriptionStatus === "past_due" || org.subscriptionStatus === "canceled") return true;
+  if (
+    org.subscriptionStatus === "trialing" &&
+    !org.stripeSubscriptionId &&
+    org.trialEndsAt !== null &&
+    org.trialEndsAt.getTime() < Date.now()
+  ) {
+    // App-level trial ran out and the owner never completed Checkout.
+    return true;
+  }
+  return false;
+}
 
 /**
  * The staff-app gate. Every /app page/handler obtains its context here —
@@ -22,6 +49,7 @@ export type StaffContext = {
  *
  * Enforces, in order: valid session → mandatory TOTP → 30-min idle timeout
  * (absolute 12 h lifetime is better-auth's expiresIn) → active org membership.
+ * Grace mode (readOnly) is surfaced here and enforced by authorize().
  */
 export async function requireStaff(): Promise<StaffContext> {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -39,8 +67,8 @@ export async function requireStaff(): Promise<StaffContext> {
   const memberships = await listMembershipsForUser(session.user.id);
   if (memberships.length === 0) redirect("/no-organization");
 
-  // Single-org users (the norm) get their org; multi-org selection is an M1
-  // concern (active-org cookie) — until then, first membership wins.
+  // Single-org users (the norm) get their org; multi-org selection is a
+  // later concern (active-org cookie) — until then, first membership wins.
   const m = memberships[0];
 
   return {
@@ -49,6 +77,13 @@ export async function requireStaff(): Promise<StaffContext> {
     role: m.membership.role,
     orgId: m.org.id,
     orgName: m.org.name,
+    timezone: m.org.timezone,
+    subscriptionStatus: m.org.subscriptionStatus,
+    trialEndsAt: m.org.trialEndsAt,
+    stripeCustomerId: m.org.stripeCustomerId,
+    stripeSubscriptionId: m.org.stripeSubscriptionId,
+    orgSettings: m.org.settings,
+    readOnly: computeReadOnly(m.org),
     scope: new OrgScope(m.org.id, session.user.id),
   };
 }

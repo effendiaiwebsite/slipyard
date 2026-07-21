@@ -22,6 +22,27 @@
       "when": 1784665843031,
       "tag": "0002_two_factor_verified",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784673678065,
+      "tag": "0003_m1_billing_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784673683115,
+      "tag": "0004_m1_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784673837916,
+      "tag": "0005_m1_rls_stripe",
+      "breakpoints": true
     }
   ]
 }

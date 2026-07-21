@@ -61,14 +61,22 @@ until TOTP is verified. Idle timeout 30 min (checked in requireStaff against
 session.updatedAt), absolute 12 h (better-auth expiresIn). TOTP brute-force
 lockout via better-auth failedVerificationCount/lockedUntil.
 
-**Signup → org creation (M1)** — account → org (see bootstrap note) → owner
-membership → Stripe Checkout 14-day trial → webhook drives
-org.subscription_status → lapsed = read-only grace banner, never deletion.
+**Signup → org creation** — account → /no-organization "create your firm" →
+createOrgForUser bootstrap (see note above) with a 14-day app-level trial
+(org.trial_ends_at) → owner may complete Stripe Checkout any time (remaining
+trial days carry over as subscription_data.trial_period_days). Webhooks (+
+the checkout success-redirect sync, ADR-0010) drive org.subscription_status.
+Lapsed or trial-expired-unsubscribed ⇒ computeReadOnly() true ⇒ authorize()
+blocks everything outside the grace allowlist (views + billing.manage), red
+banner renders, write UIs disable. Never deletion.
 
-**Employee invite (M1)** — owner/admin creates invitation (name, email,
-mobile, role); token stored as sha256 hash, raw token only in the email+SMS
-link; 7-day expiry, revocable → invitee sets password/Google-links → TOTP
-setup → personal dashboard.
+**Employee invite** — owner/admin creates invitation (name, email, mobile,
+role — never owner); token stored as sha256 hash (ADR-0003), raw token only
+in the email+SMS link (outbox pattern; console in dev); 7-day expiry,
+revocable → /join/[token] validates via the token-hash GUC policy
+(ADR-0009) → invitee sets password (email locked to invite) or Google-links
+(email must match) → acceptInvitation transaction (membership + stamp +
+audit) → seat quantity syncs → forced TOTP → personal dashboard.
 
 **Document upload (M3)** — browser → presigned POST (type+25 MB caps) →
 `org/{orgId}/quarantine/` → pg-boss scan job (ClamAV) → promote to vault or

@@ -6,7 +6,7 @@
   design-reference acknowledged in CLAUDE.md, CI, seed skeleton, all context
   files. ✅ Fresh clone → `pnpm run setup && pnpm dev`; login with MFA works;
   tenancy-isolation test harness exists.
-- [ ] **M1 — SaaS shell.** Signup→org creation, Stripe checkout/trial/
+- [x] **M1 — SaaS shell.** Signup→org creation, Stripe checkout/trial/
   webhooks/grace mode, Customer Portal link, employee invitations (email+SMS),
   role enforcement end-to-end, personal vs firm dashboards (skeleton),
   settings pages. ✅ Two seeded orgs fully isolated; invite→join→MFA→personal

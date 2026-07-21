@@ -48,5 +48,6 @@ test("first login forces TOTP enrollment, then lands on dashboard", async ({ pag
 
   await page.waitForURL(/\/app$/);
   await expect(page.getByRole("heading", { name: /Welcome back, Priya/i })).toBeVisible();
-  await expect(page.getByText("Lakeside CPA — firm dashboard", { exact: false })).toBeVisible();
+  // Clerk role ⇒ personal dashboard variant.
+  await expect(page.getByText(/Your personal dashboard/i)).toBeVisible();
 });

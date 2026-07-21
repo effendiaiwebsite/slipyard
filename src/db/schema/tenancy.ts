@@ -50,6 +50,10 @@ export const org = pgTable("org", {
   timezone: text("timezone").notNull().default("America/Toronto"),
   subscriptionStatus: subscriptionStatus("subscription_status").notNull().default("trialing"),
   stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  // 14-day app-level trial starts at org creation; Stripe's own trial takes
+  // over once the owner completes Checkout.
+  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
   settings: jsonb("settings").$type<OrgSettings>().notNull().default(defaultOrgSettings),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

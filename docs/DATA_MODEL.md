@@ -79,11 +79,30 @@ Append-only enforced in DB: crm_app has SELECT+INSERT only. Written by
 `authorize()` on every permitted client-data action, every denial, and every
 tenancy violation.
 
+### org — M1 additions
+`stripe_subscription_id` (set at first Checkout; cleared on deletion),
+`trial_ends_at` (app-level 14-day trial from org creation; Stripe's own trial
+takes over after Checkout). Extra RLS policies: `org_by_stripe_customer`
+(webhook path, GUC app.stripe_customer_id) — see ADR-0009.
+
+### outbox (M1, RLS)
+Every outbound email/SMS: channel (enum outbox_channel email/sms),
+to_address, subject (email only), body, status (enum outbox_status
+queued/sent/failed), provider ('console' in dev; ses/smtp/twilio from M5),
+provider_message_id, error, meta jsonb, sent_at. Bodies carry invite/magic
+links — sensitive; never logged.
+
+### stripe_event (M1, NOT under RLS)
+Webhook idempotency: Stripe event id PK + type + processed_at. No tenant
+data; touched only by the webhook route. First-insert-wins gates processing.
+
 ## Enums
 subscription_status: trialing, active, past_due, canceled
 staff_role: owner, admin, accountant, clerk
 membership_status: active, deactivated
 actor_type: staff, client, system, ai
+outbox_channel: email, sms
+outbox_status: queued, sent, failed
 
 ## Planned (added at their milestone; spec §3)
 client (SIN app-encrypted; custom_fields jsonb), household, trusted_helper,

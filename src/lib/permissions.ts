@@ -161,10 +161,38 @@ export type ResourceRef = {
   assignedTo?: string | null;
 };
 
+/**
+ * Actions still permitted while an org is in read-only grace mode (lapsed
+ * subscription / expired trial). Views stay open — data is never held
+ * hostage — and billing.manage stays open so the owner can fix payment.
+ */
+const GRACE_MODE_ALLOWED: ReadonlySet<Action> = new Set<Action>([
+  "org.view",
+  "employees.view",
+  "clients.view",
+  "engagements.view",
+  "documents.view",
+  "audit.view",
+  "billing.manage",
+]);
+
+export function allowedInReadOnly(action: Action): boolean {
+  return GRACE_MODE_ALLOWED.has(action);
+}
+
 export class PermissionError extends Error {
   constructor(action: Action, role: Role) {
     super(`Role '${role}' is not permitted to '${action}'`);
     this.name = "PermissionError";
+  }
+}
+
+export class ReadOnlyOrgError extends Error {
+  constructor(action: Action) {
+    super(
+      `'${action}' is unavailable while the subscription is inactive. Data is read-only until billing is restored.`
+    );
+    this.name = "ReadOnlyOrgError";
   }
 }
 
@@ -210,8 +238,24 @@ export async function authorize(
   actor: Actor,
   action: Action,
   resource: ResourceRef | undefined,
-  opts?: { ip?: string; details?: Record<string, unknown>; orgSettings?: OrgSettings }
+  opts?: {
+    ip?: string;
+    details?: Record<string, unknown>;
+    orgSettings?: OrgSettings;
+    /** Pass ctx.readOnly — lapsed orgs block everything outside GRACE_MODE_ALLOWED. */
+    readOnlyOrg?: boolean;
+  }
 ): Promise<void> {
+  if (opts?.readOnlyOrg && !allowedInReadOnly(action)) {
+    await scope.writeAudit({
+      actorType: "staff",
+      action: `blocked_read_only:${action}`,
+      resourceType: resource?.type ?? "org",
+      resourceId: resource?.id,
+      ip: opts?.ip,
+    });
+    throw new ReadOnlyOrgError(action);
+  }
   let allowed = false;
   try {
     allowed = can(actor, action, resource, opts?.orgSettings);
