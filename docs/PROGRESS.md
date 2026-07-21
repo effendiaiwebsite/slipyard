@@ -31,29 +31,30 @@ _Last updated: 2026-07-21 (M1 complete)_
 ## IN PROGRESS
 - Nothing — stopped at the M1 boundary.
 
+## POST-M1 FOLLOW-UPS (done 2026-07-21, same session)
+- **Flat pricing confirmed by Joey (ADR-0012)**: $300/month per firm,
+  unlimited staff. Checkout quantity fixed at 1; seat-quantity sync removed;
+  UI copy updated.
+- Stripe CLI installed (winget). Real STRIPE_WEBHOOK_SECRET captured via
+  `stripe listen --print-secret` and stored in .env. Live round-trip
+  verified: `stripe trigger customer.subscription.updated` → forwarded →
+  signature verified → recorded in stripe_event (5 events).
+- Customer Portal default configuration created via API
+  (bpc_1TvmsEFRbvsBIVl5Li6SYZYC) + portal session smoke-tested — "Manage
+  billing" works.
+
 ## KNOWN BUGS / LIMITATIONS
-- STRIPE_WEBHOOK_SECRET is a placeholder until `stripe listen` runs (Stripe
-  CLI not installed on this machine). Dev relies on the success-redirect sync;
-  install the CLI to test true webhook delivery + `stripe trigger` lapse events.
 - Google-only accounts still can't enroll TOTP (twoFactor.enable needs a
   password). Join flow works via password path; Google-join users hit this on
   /setup-mfa. Candidate fix in M2: better-auth setPassword path for
   OAuth-only accounts.
-- Customer Portal needs one-time activation in the Stripe test dashboard
-  (Settings → Billing → Customer portal) — the UI shows a helpful error until
-  then.
 - Multi-org users still land in their first org (switcher deferred).
 - checkout.session.completed relies on client_reference_id; sessions created
   outside the app (e.g. Payment Links) are ignored by design.
 
 ## NEEDS SATINDER'S / JOEY'S REVIEW
-- **Pricing model**: Stripe price is $300 CAD/month and billing is PER SEAT
-  (spec §1: quantity = active staff). A 4-person firm pays $1,200/month. If
-  $300 was meant as flat-per-firm, change the price amount in Stripe or drop
-  the quantity logic (one-line change in billing.ts) — decide before launch.
+- ~~Pricing model~~ RESOLVED: flat $300/firm (ADR-0012).
 - ADR-0004 accountant_scope_mode default (carried over from M0).
-- Deactivated employees free their seat immediately (prorated credit via
-  Stripe proration). Confirm that's the desired seat policy.
 
 ## NEXT 3 CONCRETE STEPS (M2 — Client hub)
 1. Schema: client (SIN encrypted via src/lib/crypto, custom_fields JSONB,

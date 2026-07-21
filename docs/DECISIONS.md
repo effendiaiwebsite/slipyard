@@ -70,3 +70,10 @@ quantity, sync on membership changes, immediate proration on deactivation).
 The customer-created Stripe price is $300/month, which per-seat may not be
 the intent — flagged in PROGRESS.md for Joey; changing the amount is a
 Stripe-dashboard-only operation.
+
+## ADR-0012 (2026-07-21) — Flat per-firm pricing (customer decision; supersedes ADR-0011)
+Joey confirmed: $300 CAD/month flat per firm, irrespective of staff count.
+Checkout quantity is always 1; syncSeatQuantity and its call sites removed;
+UI copy updated ("staff count never changes your bill"). The spec's per-seat
+model (§1) is superseded by the customer's explicit direction. Reverting is
+one line in billing.ts + a quantity-sync helper if ever needed.

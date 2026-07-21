@@ -3,7 +3,6 @@
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { syncSeatQuantity } from "@/lib/billing";
 import { requireStaff } from "@/lib/context";
 import { env } from "@/lib/env";
 import { hashInviteToken } from "@/lib/invites";
@@ -162,11 +161,6 @@ export async function setMemberStatus(
   }
 
   await ctx.scope.updateMembership(membershipId, { status });
-  try {
-    await syncSeatQuantity(ctx.scope, ctx.stripeSubscriptionId);
-  } catch (e) {
-    logger.error({ err: e, orgId: ctx.orgId }, "seat sync failed — will correct on next change");
-  }
   revalidatePath("/app/settings/employees");
   return { ok: true };
 }

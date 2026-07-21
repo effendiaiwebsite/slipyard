@@ -50,9 +50,12 @@ own fixtures (random UUIDs) and clean up — they don't depend on the seed.
 - [x] Real Stripe test keys verified: price listed via API; checkout session
   created + expired via smoke script (per-seat quantity, 14-day trial).
 - [x] Full e2e suite (5 tests) green against seeded dev DB.
-- [ ] True webhook delivery via `stripe listen` + `stripe trigger` — pending
-  Stripe CLI install (PROGRESS.md known limitation).
-- [ ] Customer Portal — needs one-time activation in Stripe test dashboard.
+- [x] True webhook delivery: `stripe listen --forward-to
+  localhost:3000/api/webhooks/stripe` + `stripe trigger
+  customer.subscription.updated` → signature verified, events recorded in
+  stripe_event (verified 2026-07-21).
+- [x] Customer Portal activated via API (default configuration) + portal
+  session smoke-tested.
 - [ ] Google OAuth login round-trip — keys configured; verify redirect URI
   in Google console on first manual login.
 

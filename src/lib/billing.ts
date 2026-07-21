@@ -11,9 +11,11 @@ import { logger } from "@/lib/logger";
 import type { StaffContext } from "@/lib/context";
 
 /**
- * Stripe billing (§1): monthly plan, quantity = active staff seats, 14-day
- * trial, Checkout + Customer Portal, webhooks drive org.subscription_status.
- * Lapsed ⇒ read-only grace mode (computeReadOnly/authorize), never deletion.
+ * Stripe billing: flat monthly price PER FIRM regardless of staff count
+ * (customer decision, ADR-0012 — supersedes the spec's per-seat model),
+ * 14-day trial, Checkout + Customer Portal, webhooks drive
+ * org.subscription_status. Lapsed ⇒ read-only grace mode
+ * (computeReadOnly/authorize), never deletion.
  *
  * Dev without `stripe listen`: the Checkout success redirect triggers
  * syncCheckoutSuccess() as a fallback, so status updates even when webhooks
@@ -80,14 +82,14 @@ export async function createCheckoutSession(ctx: StaffContext): Promise<string> 
   const stripe = getStripe();
   if (!env.STRIPE_PRICE_ID) throw new Error("STRIPE_PRICE_ID is not set");
   const customer = await ensureCustomer(ctx);
-  const seats = await activeSeatCount(ctx.scope);
   const trialDays = remainingTrialDays(ctx.trialEndsAt);
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer,
     client_reference_id: ctx.orgId,
-    line_items: [{ price: env.STRIPE_PRICE_ID, quantity: seats }],
+    // Flat per-firm price: quantity is always 1 (ADR-0012).
+    line_items: [{ price: env.STRIPE_PRICE_ID, quantity: 1 }],
     subscription_data: trialDays > 0 ? { trial_period_days: trialDays } : undefined,
     success_url: `${env.APP_URL}/app/settings/billing?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.APP_URL}/app/settings/billing?canceled=1`,
@@ -131,24 +133,6 @@ export async function syncCheckoutSuccess(ctx: StaffContext, sessionId: string):
     },
     "checkout_success_sync"
   );
-}
-
-/** Keep subscription quantity = active seats. No-op before first Checkout. */
-export async function syncSeatQuantity(
-  scope: OrgScope,
-  stripeSubscriptionId: string | null
-): Promise<void> {
-  if (!stripeSubscriptionId || !features.stripe) return;
-  const stripe = getStripe();
-  const seats = await activeSeatCount(scope);
-  const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
-  const item = sub.items.data[0];
-  if (!item || item.quantity === seats) return;
-  await stripe.subscriptions.update(sub.id, {
-    items: [{ id: item.id, quantity: seats }],
-    proration_behavior: "create_prorations",
-  });
-  logger.info({ orgId: scope.orgId, seats }, "stripe seat quantity synced");
 }
 
 /**

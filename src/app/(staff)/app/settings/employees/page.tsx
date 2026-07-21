@@ -21,8 +21,8 @@ export default async function EmployeesPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Employees</h1>
         <p className="text-sm text-slate-500 mt-1">
-          {members.filter((m) => m.membership.status === "active").length} active seat(s) — your
-          subscription quantity follows this number.
+          {members.filter((m) => m.membership.status === "active").length} active member(s) —
+          pricing is flat per firm, so adding staff never changes your bill.
         </p>
       </div>
 

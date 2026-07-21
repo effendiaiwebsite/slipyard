@@ -1,10 +1,8 @@
 "use server";
 
-import { OrgScope, acceptInvitation, findInvitationByTokenHash } from "@/db/scoped";
-import { syncSeatQuantity } from "@/lib/billing";
+import { acceptInvitation, findInvitationByTokenHash } from "@/db/scoped";
 import { requireSession } from "@/lib/context";
 import { hashInviteToken, invitationProblem } from "@/lib/invites";
-import { logger } from "@/lib/logger";
 import { redirect } from "next/navigation";
 
 /**
@@ -27,16 +25,6 @@ export async function acceptInviteAction(rawToken: string): Promise<{ error: str
   }
 
   await acceptInvitation(inv.id, inv.orgId, tokenHash, session.user.id, inv.role, inv.invitedBy);
-
-  // Seats follow active memberships; failure here self-corrects on the next
-  // membership change.
-  try {
-    const scope = new OrgScope(inv.orgId, session.user.id);
-    const org = await scope.getOrg();
-    await syncSeatQuantity(scope, org?.stripeSubscriptionId ?? null);
-  } catch (e) {
-    logger.error({ err: e, orgId: inv.orgId }, "seat sync after invite accept failed");
-  }
 
   // requireStaff enforces MFA before any staff surface renders.
   redirect("/setup-mfa");

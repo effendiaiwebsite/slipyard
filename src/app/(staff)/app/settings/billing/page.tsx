@@ -42,7 +42,7 @@ export default async function BillingPage({
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Billing</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Monthly subscription, billed per active staff seat.
+          Flat monthly subscription per firm — unlimited staff.
         </p>
       </div>
 
@@ -87,8 +87,7 @@ export default async function BillingPage({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="text-sm text-slate-600">
-            Active seats: <strong>{seats}</strong> — subscription quantity follows this
-            automatically.
+            Active staff: <strong>{seats}</strong>. Staff count never changes your bill.
           </div>
           {!features.stripe ? (
             <p className="text-sm text-amber-700">
