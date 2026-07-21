@@ -1,0 +1,38 @@
+### Local dev services: Postgres 16 + ClamAV.
+### Windows note: if Docker Desktop is not installed, a native PostgreSQL 16/17
+### install works too — scripts/setup.ts creates the database and the
+### non-superuser `crm_app` role either way. ClamAV is only needed from M3.
+services:
+  postgres:
+    image: postgres:16
+    container_name: crm-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - crm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clamav:
+    image: clamav/clamav:stable
+    container_name: crm-clamav
+    ports:
+      - "3310:3310"
+    volumes:
+      - crm_clamdb:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --version || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  crm_pgdata:
+  crm_clamdb:

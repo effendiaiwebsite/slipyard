@@ -1,0 +1,93 @@
+# Data model (authoritative)
+
+Conventions: UUID PKs (`gen_random_uuid()` or better-auth generateId →
+randomUUID), `timestamptz` timestamps, `org_id` on every tenant table,
+snake_case in SQL / camelCase in Drizzle. Schema source:
+`src/db/schema/*.ts`; RLS in `drizzle/0001_m0_rls.sql`.
+
+## Auth tables (better-auth managed — NOT org-scoped)
+
+Why not org-scoped: a staff user may belong to several orgs, and login/session
+resolution happens before an org context exists. Model names are mapped in
+`src/lib/auth.ts` (`user` → staff_user etc.).
+
+### staff_user
+| field | type | notes |
+|---|---|---|
+| id | text PK | UUID string |
+| name, email (unique), image | text | |
+| email_verified | bool | seed sets true; real verification M1 |
+| two_factor_enabled | bool | gate checked by requireStaff — mandatory MFA |
+| created_at, updated_at | timestamptz | |
+
+### auth_session
+token (unique), user_id FK, expires_at (12 h absolute), ip_address,
+user_agent, created_at, updated_at. `updated_at` doubles as last-activity for
+the 30-min idle check (better-auth updateAge = 5 min).
+
+### auth_account
+Credential + OAuth accounts per user. `provider_id` 'credential' rows carry
+the scrypt password hash; 'google' rows carry OAuth tokens.
+
+### auth_verification
+better-auth's generic verification store (email tokens, OAuth state).
+
+### auth_two_factor
+secret, backup_codes, user_id FK, verified, failed_verification_count,
+locked_until — the last three power better-auth's TOTP brute-force lockout.
+
+## Tenant tables (RLS FORCEd)
+
+### org
+| field | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| name | text | |
+| timezone | text | IANA; default America/Toronto; used for signing stamps |
+| subscription_status | enum subscription_status | trialing/active/past_due/canceled — driven by Stripe webhooks (M1); past_due/canceled ⇒ read-only grace mode |
+| stripe_customer_id | text | set at first Checkout (M1) |
+| settings | jsonb OrgSettings | `ai_enabled` (default true), `accountant_scope_mode` ('all_read' default — ADR-0004) |
+| created_at, updated_at | timestamptz | |
+
+RLS: `id = app.org_id` OR user has active membership (login-time org list).
+
+### org_membership
+org_id FK, user_id FK, role (enum staff_role: owner/admin/accountant/clerk),
+status (enum membership_status: active/deactivated), invited_by FK,
+timestamps. Unique (org_id, user_id). Deactivation keeps the row (history,
+seat count) — status flips.
+RLS: tenant match OR `user_id = app.user_id` (pre-org lookup).
+
+### invitation
+email, phone, name, role, token_hash (sha256 — raw token only ever exists in
+the sent link), invited_by FK, expires_at (7 days), accepted_at, revoked_at.
+Why hash: a DB leak must not yield live invite links.
+
+### audit_log (append-only)
+| field | type | notes |
+|---|---|---|
+| org_id | uuid FK (restrict) | |
+| actor_type | enum actor_type | staff/client/system/ai |
+| actor_user_id | text FK nullable | null for system/client/ai actors |
+| action | text | e.g. `clients.update`, `denied:clients.update`, `tenancy_violation:*` |
+| resource_type, resource_id | text | |
+| details | jsonb | NEVER SIN/tokens/URLs |
+| ip | text | |
+| created_at | timestamptz | |
+
+Append-only enforced in DB: crm_app has SELECT+INSERT only. Written by
+`authorize()` on every permitted client-data action, every denial, and every
+tenancy violation.
+
+## Enums
+subscription_status: trialing, active, past_due, canceled
+staff_role: owner, admin, accountant, clerk
+membership_status: active, deactivated
+actor_type: staff, client, system, ai
+
+## Planned (added at their milestone; spec §3)
+client (SIN app-encrypted; custom_fields jsonb), household, trusted_helper,
+engagement (+status enum not_started→…→noa_received), checklist_item,
+document, signature_request, cra_authorization, message, portal_token,
+time_entry, invoice, ai_interaction, import_batch, import_mapping_template,
+staging tables.
