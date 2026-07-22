@@ -1,69 +1,69 @@
 # Progress
 
-_Last updated: 2026-07-21 (M1 complete)_
+_Last updated: 2026-07-21 (M2 complete)_
 
 ## DONE
 - **M0 — Foundation** (commit `M0: ...`): scaffold, RLS + OrgScope, better-auth
   with mandatory TOTP, permission matrix + audit, shells, tests, CI, docs.
-- **M1 — SaaS shell** (commit `M1: ...`):
-  - Signup → firm creation (/no-organization) with 14-day app-level trial;
-    RLS-safe bootstrap (pre-generated org UUID + set_config).
-  - Stripe (REAL test keys in .env, verified against the API): Checkout
-    (per-seat quantity, remaining-trial carryover), signature-verified +
-    idempotent webhooks (stripe_event table), Customer Portal link,
-    success-redirect sync fallback for dev without `stripe listen`, seat-count
-    sync on membership changes.
-  - Grace mode: past_due/canceled or expired-unsubscribed trial ⇒ read-only
-    (authorize() blocks non-view actions except billing.manage; red banner;
-    write UIs disabled). Nothing is ever deleted.
-  - Invitations: outbox-pattern email+SMS (console in dev), sha256-hashed
-    tokens, 7-day expiry, revoke; /join/[token] accept flow (password or
-    Google, email must match) → forced TOTP → personal dashboard.
-  - Employees settings: invite/revoke, role changes (owner-gated for owner
-    role, last-owner protection), deactivate/reactivate with seat sync.
-  - Settings: firm profile (name/timezone), AI toggle, accountant scope mode,
-    billing page. Dashboards: firm variant (owner/admin) vs personal
-    (accountant/clerk) skeletons.
-  - Tests: 37 Vitest (adds billing/webhook/grace/invite/bootstrap) + 5
-    Playwright (adds invite→join→MFA→personal dashboard; lapse→read-only→
-    restore). e2e reseeds automatically via globalSetup.
+- **M1 — SaaS shell** (commit `M1: ...`): signup→firm creation, Stripe
+  checkout/trial/webhooks/grace mode (flat $300/firm — ADR-0012, live-verified),
+  Customer Portal, invitations (outbox email+SMS, hashed tokens), employees
+  settings, role dashboards, settings pages.
+- **M2 — Client hub** (this commit):
+  - Schema + FORCEd RLS: client (SIN AES-256-GCM via crypto.ts + sin_last3
+    for mask-only display, custom_fields jsonb, tags[], preferred_channel,
+    assigned accountant), household, engagement (7-status pipeline
+    ADR-0013, status_timestamps, assignee), client_note (pinned),
+    contact_log. Deterministic seed: 10 Lakeside clients (2 households,
+    2 encrypted SINs, corp + trust), 9 engagements across every board
+    column, notes + contact history, 1 isolation client in org 2.
+  - OrgScope methods: listClientsWithMeta (assignee/household names + latest
+    engagement + last contact merged), detail (household members, notes,
+    contacts, engagements), CRUD, households, notes/pin, contact log,
+    engagements (create/transition/assign/countByStatus).
+  - Permissions: new `engagements.create` action (accountant=assigned,
+    clerk=deny); all mutations via authorize() with resource assignment;
+    server actions return denials as friendly messages (tryAuthorize) —
+    still audited. Accountant assigned_only view-scoping enforced in grid,
+    detail (404, no existence leak), board, dashboards (viewAssignedOnlyFilter).
+  - UI: clients grid (TanStack Table — search, type filter, archived toggle,
+    sortable, stage badges, owner, last contact), client detail (masked SIN,
+    household links, pinned-note callout, notes, contact log, engagement
+    transitions + assignment), new/edit forms (SIN validated Luhn +
+    encrypted server-side, never echoed), workflow kanban (HTML5 drag,
+    optimistic move, permission-locked cards with lock icon, firm/mine
+    filter), dashboards wired to real client/engagement counts by stage.
+  - Tests: 49 Vitest (12 new in clients.test.ts) + 9 Playwright (4 new in
+    m2.spec.ts). e2e TOTP secrets now persist across spec files
+    (e2e/.totp-secrets.json, cleared each run); auth rate limit 300/min
+    outside production (ADR-0014).
 
 ## IN PROGRESS
-- Nothing — stopped at the M1 boundary.
-
-## POST-M1 FOLLOW-UPS (done 2026-07-21, same session)
-- **Flat pricing confirmed by Joey (ADR-0012)**: $300/month per firm,
-  unlimited staff. Checkout quantity fixed at 1; seat-quantity sync removed;
-  UI copy updated.
-- Stripe CLI installed (winget). Real STRIPE_WEBHOOK_SECRET captured via
-  `stripe listen --print-secret` and stored in .env. Live round-trip
-  verified: `stripe trigger customer.subscription.updated` → forwarded →
-  signature verified → recorded in stripe_event (5 events).
-- Customer Portal default configuration created via API
-  (bpc_1TvmsEFRbvsBIVl5Li6SYZYC) + portal session smoke-tested — "Manage
-  billing" works.
+- Nothing — stopped at the M2 boundary.
 
 ## KNOWN BUGS / LIMITATIONS
 - Google-only accounts still can't enroll TOTP (twoFactor.enable needs a
-  password). Join flow works via password path; Google-join users hit this on
-  /setup-mfa. Candidate fix in M2: better-auth setPassword path for
-  OAuth-only accounts.
+  password). Candidate fix in a later milestone: better-auth setPassword
+  path for OAuth-only accounts.
 - Multi-org users still land in their first org (switcher deferred).
 - checkout.session.completed relies on client_reference_id; sessions created
-  outside the app (e.g. Payment Links) are ignored by design.
+  outside the app are ignored by design.
+- Clients grid filters/search run client-side on the org's full (scoped)
+  list — fine at small-firm scale; move search server-side if a firm's list
+  grows past a few thousand.
+- Households are created inline from the client form; there's no dedicated
+  household management page (rename/merge) yet.
 
 ## NEEDS SATINDER'S / JOEY'S REVIEW
-- ~~Pricing model~~ RESOLVED: flat $300/firm (ADR-0012).
 - ADR-0004 accountant_scope_mode default (carried over from M0).
+- ADR-0013 engagement status names (board columns) — rename is cheap now,
+  annoying after M3 checklists hook onto statuses.
 
-## NEXT 3 CONCRETE STEPS (M2 — Client hub)
-1. Schema: client (SIN encrypted via src/lib/crypto, custom_fields JSONB,
-   assigned_accountant, preferred_channel, tags), household, engagement (+
-   status enum + transition timestamps), note/contact-log tables + RLS.
-2. Clients grid (TanStack Table: search, type filters, stage badges, owner,
-   last contact — mirror design-reference clients page) + client detail
-   (identity, household, tags, pinned notes, contact log, engagement
-   transitions, assignment).
-3. Workflow board (kanban by engagement status, filter by owner, drag =
-   permission-checked transition) + dashboards wired to real engagement
-   counts + accountant assigned-scope enforcement end-to-end.
+## NEXT 3 CONCRETE STEPS (M3 — Vault & checklists)
+1. S3 pipeline (ca-central-1 + KMS, org/{orgId}/quarantine|vault keys),
+   presigned POST with type/25MB caps, ClamAV scan job, promote/flag flow —
+   needs Docker or a dev bucket + local clamd (ADR-0007 revisit).
+2. document + checklist_item tables (+ RLS), checklist engine seeded from
+   engagement type, intake queue UI (clerk documents.intake_upload path).
+3. Missing-docs dashboard + Returns page; auto-advance engagement to
+   awaiting_docs/in_preparation on checklist state changes.

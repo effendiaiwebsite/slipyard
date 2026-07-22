@@ -11,7 +11,7 @@
   role enforcement end-to-end, personal vs firm dashboards (skeleton),
   settings pages. ✅ Two seeded orgs fully isolated; invite→join→MFA→personal
   dashboard flow passes Playwright; subscription lapse flips org read-only.
-- [ ] **M2 — Client hub.** Clients grid + detail, households, tags, notes,
+- [x] **M2 — Client hub.** Clients grid + detail, households, tags, notes,
   contact log, engagements + transitions, workflow board, search, assignment.
   ✅ Firm runs its client list entirely in-app; board drag respects permissions.
 - [ ] **M3 — Vault & checklists.** S3 pipeline, quarantine/scan, documents,

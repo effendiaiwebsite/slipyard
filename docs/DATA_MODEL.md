@@ -96,6 +96,47 @@ links — sensitive; never logged.
 Webhook idempotency: Stripe event id PK + type + processed_at. No tenant
 data; touched only by the webhook route. First-insert-wins gates processing.
 
+## Client hub (M2, all RLS FORCEd — drizzle/0007_m2_rls.sql)
+
+### client
+| field | type | notes |
+|---|---|---|
+| type | enum client_type | individual/corporation/trust |
+| status | enum client_status | active/archived — archive, never delete |
+| display_name | text | |
+| email, phone | text | phone E.164 |
+| preferred_channel | enum preferred_channel | email/sms/phone/mail (elderly clientele ⇒ default phone) |
+| address_line1, city, province, postal_code | text | province 2-letter |
+| date_of_birth | date | never sent to model APIs |
+| sin_encrypted | text | AES-256-GCM via src/lib/crypto encryptField; NEVER plaintext |
+| sin_last3 | text | what maskSin shows — lists render the mask without decrypting |
+| assigned_accountant_id | text FK staff_user | drives accountant write scope |
+| household_id | uuid FK household | set null on household delete |
+| tags | text[] | free-form chips |
+| custom_fields | jsonb Record<string,string> | ad-hoc per-firm fields (import wizard M9 maps here) |
+| created_by | text FK staff_user | |
+
+### household
+org_id, name, created_at. Family grouping for display + (M4) trusted-helper
+scoping. Members = clients with household_id.
+
+### engagement
+client_id FK, type (enum engagement_type t1/t2/t3/other), tax_year int,
+status (enum engagement_status — the workflow pipeline, ADR-0013),
+status_timestamps jsonb (status → ISO instant it was last entered),
+assigned_to_id FK staff_user (defaults to the client's accountant at
+creation), created_by. Transitions are any→any (ADR-0013), permission-checked
+(`engagements.transition`, accountants only on assigned), audited.
+
+### client_note
+client_id FK, author_id, body, pinned bool. Pinned notes surface in the
+detail-page callout.
+
+### contact_log
+client_id FK, channel (enum contact_channel phone/email/sms/meeting/mail/
+other), summary, occurred_at, created_by. max(occurred_at) is "last contact"
+in the grid.
+
 ## Enums
 subscription_status: trialing, active, past_due, canceled
 staff_role: owner, admin, accountant, clerk
@@ -103,10 +144,14 @@ membership_status: active, deactivated
 actor_type: staff, client, system, ai
 outbox_channel: email, sms
 outbox_status: queued, sent, failed
+client_type: individual, corporation, trust
+client_status: active, archived
+preferred_channel: email, sms, phone, mail
+engagement_type: t1, t2, t3, other
+engagement_status: not_started, awaiting_docs, in_preparation, in_review, awaiting_signature, filed, noa_received
+contact_channel: phone, email, sms, meeting, mail, other
 
 ## Planned (added at their milestone; spec §3)
-client (SIN app-encrypted; custom_fields jsonb), household, trusted_helper,
-engagement (+status enum not_started→…→noa_received), checklist_item,
-document, signature_request, cra_authorization, message, portal_token,
-time_entry, invoice, ai_interaction, import_batch, import_mapping_template,
-staging tables.
+trusted_helper, checklist_item, document, signature_request,
+cra_authorization, message, portal_token, time_entry, invoice,
+ai_interaction, import_batch, import_mapping_template, staging tables.

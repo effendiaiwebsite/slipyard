@@ -43,6 +43,7 @@ design-reference/**/dev.log
 /test-results/
 /playwright-report/
 /blob-report/
+/e2e/.totp-secrets.json
 
 # vercel
 .vercel

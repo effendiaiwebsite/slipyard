@@ -51,7 +51,9 @@ export const auth = betterAuth({
   rateLimit: {
     enabled: true,
     window: 60,
-    max: 30,
+    // Dev/e2e drive many logins+TOTP enrollments from one IP (localhost);
+    // production keeps the tight per-IP budget.
+    max: env.NODE_ENV === "production" ? 30 : 300,
   },
   plugins: [
     twoFactor({

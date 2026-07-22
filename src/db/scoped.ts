@@ -1,5 +1,6 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, max, ne, sql } from "drizzle-orm";
 import { db, schema } from ".";
+import type { EngagementStatus } from "./schema";
 
 /**
  * Org-scoped repository layer — the ONLY sanctioned path to tenant data.
@@ -265,6 +266,327 @@ export class OrgScope {
         .orderBy(desc(schema.auditLog.createdAt))
         .limit(limit)
     );
+  }
+
+  // ---- clients (M2) ----------------------------------------------------------
+
+  /**
+   * Grid query: clients with assignee/household names, their latest
+   * engagement, and last contact. Small-firm scale (hundreds of clients) —
+   * three simple queries merged in JS beat one lateral-join monster.
+   */
+  async listClientsWithMeta(opts?: {
+    q?: string;
+    type?: "individual" | "corporation" | "trust";
+    status?: "active" | "archived";
+    /** Restrict to one assignee (accountant assigned_only mode / "mine"). */
+    assignedToId?: string;
+  }) {
+    return this.tx(async (tx) => {
+      const conds = [eq(schema.client.orgId, this.orgId)];
+      if (opts?.q) conds.push(ilike(schema.client.displayName, `%${opts.q}%`));
+      if (opts?.type) conds.push(eq(schema.client.type, opts.type));
+      if (opts?.status) conds.push(eq(schema.client.status, opts.status));
+      if (opts?.assignedToId)
+        conds.push(eq(schema.client.assignedAccountantId, opts.assignedToId));
+
+      const clients = await tx
+        .select({
+          client: schema.client,
+          assignedName: schema.staffUser.name,
+          householdName: schema.household.name,
+        })
+        .from(schema.client)
+        .leftJoin(schema.staffUser, eq(schema.client.assignedAccountantId, schema.staffUser.id))
+        .leftJoin(schema.household, eq(schema.client.householdId, schema.household.id))
+        .where(and(...conds))
+        .orderBy(schema.client.displayName);
+
+      const engagements = await tx
+        .select()
+        .from(schema.engagement)
+        .where(eq(schema.engagement.orgId, this.orgId))
+        .orderBy(desc(schema.engagement.taxYear), desc(schema.engagement.createdAt));
+
+      const lastContacts = await tx
+        .select({
+          clientId: schema.contactLog.clientId,
+          last: max(schema.contactLog.occurredAt),
+        })
+        .from(schema.contactLog)
+        .where(eq(schema.contactLog.orgId, this.orgId))
+        .groupBy(schema.contactLog.clientId);
+
+      // First row per client is the latest engagement (ordered above).
+      const latestByClient = new Map<string, (typeof engagements)[number]>();
+      for (const e of engagements)
+        if (!latestByClient.has(e.clientId)) latestByClient.set(e.clientId, e);
+      const lastByClient = new Map(lastContacts.map((r) => [r.clientId, r.last]));
+
+      return clients.map((row) => ({
+        ...row,
+        latestEngagement: latestByClient.get(row.client.id) ?? null,
+        lastContactAt: lastByClient.get(row.client.id) ?? null,
+      }));
+    });
+  }
+
+  /** Light fetch — permission checks need assignedAccountantId before acting. */
+  async getClient(clientId: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.client)
+        .where(and(eq(schema.client.orgId, this.orgId), eq(schema.client.id, clientId)));
+      return rows[0] ?? null;
+    });
+  }
+
+  async getClientDetail(clientId: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select({
+          client: schema.client,
+          assignedName: schema.staffUser.name,
+          householdName: schema.household.name,
+        })
+        .from(schema.client)
+        .leftJoin(schema.staffUser, eq(schema.client.assignedAccountantId, schema.staffUser.id))
+        .leftJoin(schema.household, eq(schema.client.householdId, schema.household.id))
+        .where(and(eq(schema.client.orgId, this.orgId), eq(schema.client.id, clientId)));
+      const found = rows[0];
+      if (!found) return null;
+
+      const householdMembers = found.client.householdId
+        ? await tx
+            .select({ id: schema.client.id, displayName: schema.client.displayName })
+            .from(schema.client)
+            .where(
+              and(
+                eq(schema.client.orgId, this.orgId),
+                eq(schema.client.householdId, found.client.householdId),
+                ne(schema.client.id, clientId)
+              )
+            )
+        : [];
+
+      const notes = await tx
+        .select({ note: schema.clientNote, authorName: schema.staffUser.name })
+        .from(schema.clientNote)
+        .leftJoin(schema.staffUser, eq(schema.clientNote.authorId, schema.staffUser.id))
+        .where(
+          and(eq(schema.clientNote.orgId, this.orgId), eq(schema.clientNote.clientId, clientId))
+        )
+        .orderBy(desc(schema.clientNote.pinned), desc(schema.clientNote.createdAt));
+
+      const contacts = await tx
+        .select({ entry: schema.contactLog, byName: schema.staffUser.name })
+        .from(schema.contactLog)
+        .leftJoin(schema.staffUser, eq(schema.contactLog.createdBy, schema.staffUser.id))
+        .where(
+          and(eq(schema.contactLog.orgId, this.orgId), eq(schema.contactLog.clientId, clientId))
+        )
+        .orderBy(desc(schema.contactLog.occurredAt))
+        .limit(50);
+
+      const engagements = await tx
+        .select({ engagement: schema.engagement, assignedName: schema.staffUser.name })
+        .from(schema.engagement)
+        .leftJoin(schema.staffUser, eq(schema.engagement.assignedToId, schema.staffUser.id))
+        .where(
+          and(eq(schema.engagement.orgId, this.orgId), eq(schema.engagement.clientId, clientId))
+        )
+        .orderBy(desc(schema.engagement.taxYear), desc(schema.engagement.createdAt));
+
+      return { ...found, householdMembers, notes, contacts, engagements };
+    });
+  }
+
+  async createClient(fields: Omit<typeof schema.client.$inferInsert, "id" | "orgId">) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.client)
+        .values({ ...fields, orgId: this.orgId })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async updateClient(
+    clientId: string,
+    fields: Partial<Omit<typeof schema.client.$inferInsert, "id" | "orgId">>
+  ) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.client)
+        .set({ ...fields, updatedAt: new Date() })
+        .where(and(eq(schema.client.orgId, this.orgId), eq(schema.client.id, clientId)))
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  // ---- households ------------------------------------------------------------
+
+  async listHouseholds() {
+    return this.tx((tx) =>
+      tx
+        .select()
+        .from(schema.household)
+        .where(eq(schema.household.orgId, this.orgId))
+        .orderBy(schema.household.name)
+    );
+  }
+
+  async createHousehold(name: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.household)
+        .values({ orgId: this.orgId, name })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  // ---- notes & contact log ---------------------------------------------------
+
+  async addClientNote(note: { clientId: string; body: string; pinned?: boolean }) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.clientNote)
+        .values({ orgId: this.orgId, authorId: this.userId, ...note })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async setNotePinned(noteId: string, pinned: boolean) {
+    return this.tx((tx) =>
+      tx
+        .update(schema.clientNote)
+        .set({ pinned, updatedAt: new Date() })
+        .where(and(eq(schema.clientNote.orgId, this.orgId), eq(schema.clientNote.id, noteId)))
+    );
+  }
+
+  async addContactLog(entry: {
+    clientId: string;
+    channel: "phone" | "email" | "sms" | "meeting" | "mail" | "other";
+    summary: string;
+    occurredAt?: Date;
+  }) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.contactLog)
+        .values({ orgId: this.orgId, createdBy: this.userId, ...entry })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  // ---- engagements -----------------------------------------------------------
+
+  async listEngagementsWithMeta(opts?: { assignedToId?: string; taxYear?: number }) {
+    return this.tx((tx) => {
+      const conds = [eq(schema.engagement.orgId, this.orgId)];
+      if (opts?.assignedToId) conds.push(eq(schema.engagement.assignedToId, opts.assignedToId));
+      if (opts?.taxYear) conds.push(eq(schema.engagement.taxYear, opts.taxYear));
+      return tx
+        .select({
+          engagement: schema.engagement,
+          clientName: schema.client.displayName,
+          clientType: schema.client.type,
+          assignedName: schema.staffUser.name,
+        })
+        .from(schema.engagement)
+        .innerJoin(schema.client, eq(schema.engagement.clientId, schema.client.id))
+        .leftJoin(schema.staffUser, eq(schema.engagement.assignedToId, schema.staffUser.id))
+        .where(and(...conds))
+        .orderBy(desc(schema.engagement.updatedAt));
+    });
+  }
+
+  async getEngagement(engagementId: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.engagement)
+        .where(
+          and(eq(schema.engagement.orgId, this.orgId), eq(schema.engagement.id, engagementId))
+        );
+      return rows[0] ?? null;
+    });
+  }
+
+  async createEngagement(fields: {
+    clientId: string;
+    type: "t1" | "t2" | "t3" | "other";
+    taxYear: number;
+    assignedToId?: string | null;
+  }) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.engagement)
+        .values({ orgId: this.orgId, createdBy: this.userId, ...fields })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  /** Set status + stamp the moment it was entered (statusTimestamps[status]). */
+  async transitionEngagement(engagementId: string, status: EngagementStatus) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.engagement)
+        .where(
+          and(eq(schema.engagement.orgId, this.orgId), eq(schema.engagement.id, engagementId))
+        );
+      const current = rows[0];
+      if (!current) return null;
+      const updated = await tx
+        .update(schema.engagement)
+        .set({
+          status,
+          statusTimestamps: { ...current.statusTimestamps, [status]: new Date().toISOString() },
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(schema.engagement.orgId, this.orgId), eq(schema.engagement.id, engagementId))
+        )
+        .returning();
+      return updated[0] ?? null;
+    });
+  }
+
+  async updateEngagement(
+    engagementId: string,
+    fields: Partial<{ assignedToId: string | null; taxYear: number }>
+  ) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.engagement)
+        .set({ ...fields, updatedAt: new Date() })
+        .where(
+          and(eq(schema.engagement.orgId, this.orgId), eq(schema.engagement.id, engagementId))
+        )
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  /** Dashboard: engagement counts grouped by status (optionally one assignee's). */
+  async countEngagementsByStatus(assignedToId?: string) {
+    return this.tx(async (tx) => {
+      const conds = [eq(schema.engagement.orgId, this.orgId)];
+      if (assignedToId) conds.push(eq(schema.engagement.assignedToId, assignedToId));
+      const rows = await tx
+        .select({ status: schema.engagement.status, count: sql<number>`count(*)::int` })
+        .from(schema.engagement)
+        .where(and(...conds))
+        .groupBy(schema.engagement.status);
+      return new Map(rows.map((r) => [r.status, r.count]));
+    });
   }
 }
 

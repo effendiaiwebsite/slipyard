@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { generate as generateTotp } from "otplib";
+import { saveTotpSecret } from "./utils";
 
 /**
  * M0 acceptance: login with mandatory MFA works end-to-end.
@@ -42,6 +43,7 @@ test("first login forces TOTP enrollment, then lands on dashboard", async ({ pag
   const uri = await page.locator("code").innerText();
   const secret = new URL(uri).searchParams.get("secret");
   expect(secret).toBeTruthy();
+  saveTotpSecret("priya@lakesidecpa.test", secret!);
 
   await page.getByLabel("6-digit code from your app").fill(await generateTotp({ secret: secret! }));
   await page.getByRole("button", { name: "Verify and finish" }).click();

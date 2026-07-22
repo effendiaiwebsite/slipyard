@@ -46,6 +46,23 @@ own fixtures (random UUIDs) and clean up — they don't depend on the seed.
   'canceled' ⇒ read-only banner + disabled write UI + views still render,
   restore ⇒ normal.
 
+## Automated coverage (M2)
+- `tests/clients.test.ts` — SIN stored ciphertext-only (k1: prefix, no
+  plaintext substring, roundtrip decrypts); client CRUD + notes + contact log
+  through OrgScope; listClientsWithMeta merges latest engagement + last
+  contact; assignedToId narrowing; transitionEngagement stamps
+  status_timestamps; countEngagementsByStatus; org-B scope sees nothing of
+  org A; raw app-role SQL on `client` blocked by RLS (no GUC ⇒ zero rows,
+  cross-org filter ⇒ zero rows, cross-org INSERT ⇒ WITH CHECK error);
+  engagements.create/transition matrix rules (accountant assigned-only,
+  clerk deny).
+- `e2e/m2.spec.ts` — accountant: grid renders seed book → search narrows →
+  row click → detail (SIN masked `*** *** 286`, plaintext absent from DOM) →
+  add note → log contact → stage transition persists across reload; board:
+  own card draggable, colleague's locked, HTML5 drag lands + persists;
+  clerk: no create/edit/transition affordances anywhere, board fully locked;
+  tenant isolation: org-2 owner sees only org-2 clients/engagements.
+
 ## Manual checklist — M1 (verified 2026-07-21)
 - [x] Real Stripe test keys verified: price listed via API; checkout session
   created + expired via smoke script (per-seat quantity, 14-day trial).

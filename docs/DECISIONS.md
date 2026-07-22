@@ -77,3 +77,18 @@ Checkout quantity is always 1; syncSeatQuantity and its call sites removed;
 UI copy updated ("staff count never changes your bill"). The spec's per-seat
 model (§1) is superseded by the customer's explicit direction. Reverting is
 one line in billing.ts + a quantity-sync helper if ever needed.
+
+## ADR-0013 (2026-07-21) — Engagement pipeline: 7 statuses, any→any transitions
+engagement_status: not_started → awaiting_docs → in_preparation → in_review →
+awaiting_signature → filed → noa_received. Spec only fixed the endpoints
+("not_started→…→noa_received"); the middle mirrors a small firm's T1 flow and
+the board's columns. Transitions are deliberately any→any (work moves
+backwards in reality); safety comes from permission checks
+(engagements.transition = assigned for accountants, deny for clerks), a
+status_timestamps stamp per entry, and the audit log — not from a rigid state
+machine. Revisit if M6 signing needs a hard filed-immutability gate.
+
+## ADR-0014 (2026-07-21) — Auth rate limit relaxed outside production
+better-auth rateLimit stays 30 req/min/IP in production, 300 otherwise: e2e
+drives ~8 logins + TOTP enrollments from one IP (localhost) and tripped the
+in-memory limiter mid-suite. Keyed on NODE_ENV, so no prod behavior change.
