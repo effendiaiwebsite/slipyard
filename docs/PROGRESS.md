@@ -165,13 +165,27 @@ _Last updated: 2026-07-22 (M4 complete)_
   segments, but a shortener-style compact token is an easy M5+ tweak if
   carriers mangle long links in practice.
 - Portal "Sign a form" card is a static placeholder until M6.
+- **Page detection quality is "good enough", deferred to M10 polish**
+  (customer decision 2026-07-22, after the real-device run). jscanify's
+  single Canny+Otsu pass misses low-contrast scenes — white paper on a pale
+  counter, or a page with no margin in frame. Mitigated for now by the live
+  outline + guidance copy, a quality gate that refuses implausible quads,
+  and an honest fallback to the unmodified photo (always acceptable to
+  send). Candidate improvements when we polish: drag-to-adjust corners
+  (extractPaper already accepts custom cornerPoints), auto-capture once a
+  stable quad holds for N frames, a multi-strategy detector (adaptive
+  threshold + approxPolyDP fallback behind Canny), a torch toggle for low
+  light, and client-side downscale before upload.
+- Portal upload round trip measured at ~7.7 s for a 189 KB phone photo
+  through a tunnel (app-proxied multipart + synchronous ClamAV scan,
+  ADR-0016). Fine at this size; the M5 pg-boss move takes scanning out of
+  the request and should cut the client-visible wait.
 
 ## NEEDS SATINDER'S / JOEY'S REVIEW
 - ADR-0004 accountant_scope_mode default (carried over from M0).
-- **M4 manual verification (needs Satinder's phone + a tunnel)**: real-SMS
-  portal flow end-to-end and the jscanify camera capture on a real handset
-  — checklist in TESTING.md ("M4 manual items"). Everything else in the M4
-  acceptance line is green (axe AAA, e2e).
+- ~~M4 manual verification~~ DONE 2026-07-22 with Satinder over a
+  Cloudflare tunnel on a real handset (TESTING.md "Manual checklist — M4").
+  Capture-detection tuning consciously deferred to M10.
 - ADR-0019: clerks may issue/revoke portal links (front-desk workflow) —
   confirm Joey's comfortable with that.
 - ~~ADR-0013 stage names~~ RESOLVED by ADR-0015: stages are per-org editable

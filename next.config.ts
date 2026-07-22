@@ -38,6 +38,11 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Dev-only: Next blocks cross-origin requests to dev assets, which breaks
+  // testing the portal from a phone through a Cloudflare quick tunnel
+  // (real-device SMS/camera runs — see docs/TESTING.md "M4 manual items").
+  // Quick-tunnel hostnames are random, hence the wildcard. No production effect.
+  allowedDevOrigins: ["*.trycloudflare.com"],
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },

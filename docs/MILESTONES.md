@@ -19,8 +19,9 @@
   ✅ Upload→scan→assign→auto-advance E2E green against dev bucket.
 - [x] **M4 — Client portal.** Magic links + OTP, three-card home, jscanify
   flow, checklist view, trusted helpers, rate limits. ✅ Real-phone flow via
-  tunnel; axe checks pass; AAA verified. _(axe AAA green in e2e; real-phone
-  tunnel run is queued as a manual item with Satinder — see TESTING.md.)_
+  tunnel; axe checks pass; AAA verified. _(All three verified 2026-07-22:
+  axe AAA green in e2e, real-phone tunnel run done with Satinder — capture
+  detection tuning deferred to M10, see TESTING.md.)_
 - [ ] **M5 — Messaging.** Templates, outbox + Twilio/SES adapters, reminder
   policies via pg-boss, mass send, consent/STOP. ✅ Scheduled reminder fires
   (accelerated clock); real SMS with keys.

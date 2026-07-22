@@ -114,13 +114,31 @@ own fixtures (random UUIDs) and clean up — they don't depend on the seed.
   **Axe runs on every portal screen** (wcag2a/aa/aaa + best-practice tags,
   including color-contrast-enhanced) and must report zero violations.
 
-### M4 manual items (pending — need Satinder)
-- [ ] Real-phone flow via tunnel (ngrok/cloudflared → APP_URL override):
-  receive the SMS on a real handset, open the link, pass the OTP, run the
-  jscanify camera capture on a paper page, confirm the straightened photo
-  uploads and checks the item off.
-- [ ] jscanify capture on desktop Chrome with a webcam (fallback path:
-  deny camera permission → native file input takes over).
+## Manual checklist — M4 (verified 2026-07-22 with Satinder)
+Run over a Cloudflare quick tunnel (`cloudflared tunnel --url
+http://localhost:3000`) with APP_URL pointed at the tunnel host, on a real
+phone. `pnpm portal:link "<client>"` mints a link, prints a scannable QR,
+and tails the outbox for the codes — SMS delivery isn't real until the M5
+Twilio adapter, so the tester reads codes from there.
+- [x] Magic link opens on the handset over HTTPS; welcome screen names the
+  recipient and the phone tail; the GET sends no code.
+- [x] "Continue" texts the code (outbox), the code screen accepts it, and
+  the three-card home renders.
+- [x] Checklist → "Send it" → camera capture → upload: 189 KB JPEG scanned
+  clean, promoted to the vault as source=portal_upload, checklist item
+  flipped to received. Round trip 7.7 s over the tunnel.
+- [x] Detection failure path exercised for real: page filling the frame
+  edge-to-edge on a pale counter → no page found → the unmodified photo is
+  offered and uploads fine. Drove the live-outline + quality-gate rework
+  (see PROGRESS.md; further tuning deferred to M10).
+- [ ] Deferred to M10 polish: detection quality in low-contrast scenes,
+  desktop-webcam pass, permission-denied → native input fallback.
+
+### Dev note: `allowedDevOrigins`
+Next blocks cross-origin dev-asset requests, so tunnel testing needs the
+tunnel host in `allowedDevOrigins` (next.config.ts carries
+`*.trycloudflare.com`). Symptom without it: the page shell loads but every
+`/_next/*` asset 403s.
 
 ### M3 dev-machine caveat: host antivirus vs EICAR
 Norton on this dev machine intercepts EICAR uploads to localhost over HTTP
