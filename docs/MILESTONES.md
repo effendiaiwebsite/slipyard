@@ -17,9 +17,10 @@
 - [x] **M3 — Vault & checklists.** S3 pipeline, quarantine/scan, documents,
   checklist engine, intake queue, missing-docs dashboard, Returns page.
   ✅ Upload→scan→assign→auto-advance E2E green against dev bucket.
-- [ ] **M4 — Client portal.** Magic links + OTP, three-card home, jscanify
+- [x] **M4 — Client portal.** Magic links + OTP, three-card home, jscanify
   flow, checklist view, trusted helpers, rate limits. ✅ Real-phone flow via
-  tunnel; axe checks pass; AAA verified.
+  tunnel; axe checks pass; AAA verified. _(axe AAA green in e2e; real-phone
+  tunnel run is queued as a manual item with Satinder — see TESTING.md.)_
 - [ ] **M5 — Messaging.** Templates, outbox + Twilio/SES adapters, reminder
   policies via pg-boss, mass send, consent/STOP. ✅ Scheduled reminder fires
   (accelerated clock); real SMS with keys.

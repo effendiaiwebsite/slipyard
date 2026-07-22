@@ -32,6 +32,8 @@ export type DocRow = {
   sizeBytes: number;
   createdAt: string;
   uploaderName: string | null;
+  /** M4: portal uploads carry a badge so staff see the client sent it. */
+  source: "staff_upload" | "portal_upload";
   engagementId: string | null;
   engagementLabel: string | null;
   scanResult: string | null;
@@ -198,6 +200,7 @@ function DocumentRow({
           {doc.filename}
         </span>
         <Badge variant={meta.badge}>{meta.label}</Badge>
+        {doc.source === "portal_upload" && <Badge variant="accent">Portal</Badge>}
         {doc.status === "infected" && doc.scanResult && (
           <span className="text-[11px] text-red-600 font-mono">{doc.scanResult}</span>
         )}

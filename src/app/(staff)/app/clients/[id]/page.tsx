@@ -16,7 +16,9 @@ import {
   PinToggle,
   TransitionSelect,
 } from "./detail-forms";
+import { PortalAccessCard, type PortalLinkView } from "./portal-access";
 import { ChecklistPanel, DocumentsCard } from "./vault-section";
+import { PORTAL_LINK_OPENED_TTL_MS, PORTAL_OTP_MAX_ATTEMPTS } from "@/lib/portal-tokens";
 
 export const metadata = { title: "Client" };
 
@@ -55,12 +57,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
     !ctx.readOnly && can(ctx.actor, "clients.update", clientResource, ctx.orgSettings);
   const canCreateEng = !ctx.readOnly && can(ctx.actor, "engagements.create", clientResource);
 
-  const [memberships, stageRows, clientDocs, clientChecklistItems] = await Promise.all([
-    ctx.scope.listMemberships(),
-    ctx.scope.listStages(),
-    ctx.scope.listDocumentsByClient(c.id),
-    ctx.scope.listChecklistItemsForClient(c.id),
-  ]);
+  const [memberships, stageRows, clientDocs, clientChecklistItems, portalLinks] =
+    await Promise.all([
+      ctx.scope.listMemberships(),
+      ctx.scope.listStages(),
+      ctx.scope.listDocumentsByClient(c.id),
+      ctx.scope.listChecklistItemsForClient(c.id),
+      ctx.scope.listPortalTokensForClient(c.id),
+    ]);
   const engagementLabel = new Map(
     detail.engagements.map(({ engagement: e }) => [
       e.id,
@@ -85,6 +89,10 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
 
   const pinnedNotes = detail.notes.filter((n) => n.note.pinned);
   const currentYear = new Date().getFullYear();
+
+  const canManagePortal =
+    !ctx.readOnly && can(ctx.actor, "portal.manage_links", clientResource, ctx.orgSettings);
+  const portalLinkViews = toPortalLinkViews(portalLinks);
 
   return (
     <div className="p-6 space-y-5">
@@ -218,6 +226,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                   sizeBytes: d.sizeBytes,
                   createdAt: d.createdAt.toISOString(),
                   uploaderName,
+                  source: d.source,
                   engagementId: d.engagementId,
                   engagementLabel: d.engagementId
                     ? (engagementLabel.get(d.engagementId) ?? null)
@@ -339,6 +348,21 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">Portal access</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PortalAccessCard
+                clientId={c.id}
+                clientPhone={c.phone}
+                hasHousehold={!!c.householdId}
+                canManage={canManagePortal}
+                links={portalLinkViews}
+              />
+            </CardContent>
+          </Card>
+
           {Object.keys(c.customFields).length > 0 && (
             <Card>
               <CardHeader>
@@ -359,6 +383,36 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       </div>
     </div>
   );
+}
+
+type PortalTokenListing = Awaited<
+  ReturnType<import("@/db/scoped").OrgScope["listPortalTokensForClient"]>
+>;
+
+/** Derive display status per link (plain function — Date.now() stays out of render). */
+function toPortalLinkViews(links: PortalTokenListing): PortalLinkView[] {
+  const now = Date.now();
+  return links.map(({ token: t, createdByName }) => {
+    let status: PortalLinkView["status"];
+    if (t.revokedAt) status = "revoked";
+    else if (t.otpAttempts >= PORTAL_OTP_MAX_ATTEMPTS) status = "locked";
+    else if (t.expiresAt.getTime() < now) status = "expired";
+    else if (t.verifiedAt) status = "in_use";
+    else if (t.openedAt)
+      status = now > t.openedAt.getTime() + PORTAL_LINK_OPENED_TTL_MS ? "expired" : "opened";
+    else status = "sent";
+    return {
+      id: t.id,
+      recipientName: t.recipientName,
+      phoneTail: t.recipientPhone.slice(-4),
+      isHelper: t.isHelper,
+      helperRelationship: t.helperRelationship,
+      includeHousehold: t.includeHousehold,
+      status,
+      expiresAt: fmt(t.expiresAt),
+      createdByName,
+    };
+  });
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {

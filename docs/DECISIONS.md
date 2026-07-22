@@ -137,3 +137,39 @@ return out of review/filing) and never moves backwards. Per ADR-0015 it
 keys on stage.category only; if a custom pipeline lacks the target
 category, the rule silently no-ops rather than guessing a stage. Audited as
 actor_type=system, action `engagements.auto_advance`.
+
+## ADR-0018 (2026-07-22) — Portal magic links: signed JWT + hashed row, deliberate open, 30-min session
+The link carries an HS256 JWT (AUTH_SECRET) embedding org_id, client_id,
+scopes, and the portal_token row id; the row stores only sha256(raw)
+(ADR-0003). Validation verifies the signature FIRST — the signed org claim
+is what arms RLS for the hash lookup, so portal_token needs no
+GUC-as-credential policy (ADR-0009 pattern not required). Lifecycle: 7-day
+TTL unopened; opened_at starts a 15-minute window for the LINK; the 6-digit
+SMS OTP (10-min, sha256(code+id), durable 5-attempt lockout in the row) is
+sent only on a deliberate "Continue" press — never on GET, because
+SMS/messenger apps prefetch URLs and would burn the window and trigger
+texts. After verification a signed 30-minute session cookie takes over;
+every portal request re-loads the row, so staff revocation kills live
+sessions on the next navigation. Anonymous endpoints are rate-limited per
+IP and per token via an in-memory fixed-window limiter
+(src/lib/rate-limit.ts) — per-process only, fine single-instance; the cap
+that must survive restarts (OTP attempts) lives in the row.
+
+## ADR-0019 (2026-07-22) — portal.manage_links: clerk allow, accountant assigned
+Issuing/revoking portal links is front-desk work at the customer's firm
+(the clerk answers the phone when an elderly client can't find their link),
+so clerk = allow — consistent with messages.send_templated, and the link
+alone grants nothing without the OTP to the client's own phone. Accountants
+get 'assigned' like other client-comms writes (messages.send_custom).
+Issue and revoke share one action; both are audited with op details.
+
+## ADR-0020 (2026-07-22) — jscanify/OpenCV.js vendored into public/vendor; CSP extended narrowly
+The portal capture flow uses jscanify + its bundled OpenCV.js build
+(~8.6 MB). CDNs are blocked by the same-origin CSP (correctly), so a
+postinstall script (scripts/copy-vendor.mjs) copies both files from
+node_modules into gitignored public/vendor/. CSP additions are the
+deliberate minimum per next.config.ts's note: 'wasm-unsafe-eval' in
+script-src (OpenCV compiles WASM; plain eval stays blocked in prod) and
+worker-src 'self' blob:. Camera failure, load failure, or no detected page
+all fall back to the native `<input capture>` camera — the flow never
+dead-ends for the elderly audience.

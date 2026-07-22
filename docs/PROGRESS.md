@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-22 (M3 complete)_
+_Last updated: 2026-07-22 (M4 complete)_
 
 ## DONE
 - **M0 — Foundation** (commit `M0: ...`): scaffold, RLS + OrgScope, better-auth
@@ -81,8 +81,54 @@ _Last updated: 2026-07-22 (M3 complete)_
     with an empty server log) — endpoint renamed to /api/vault/upload; e2e
     infected-path assertions use a seeded fixture instead of live EICAR.
 
+- **M4 — Client portal** (this commit):
+  - Schema + FORCEd RLS (0013/0014): portal_token (token_hash sha256-only
+    per ADR-0003, recipient name/phone, trusted-helper fields,
+    include_household, scopes[], expires/opened/verified/revoked stamps,
+    durable OTP attempt counter). No GUC-as-credential policy needed — the
+    magic-link JWT's signed org_id claim arms RLS (ADR-0018).
+  - Token service (src/lib/portal-tokens.ts): HS256 JWT mint/validate
+    (org_id+client_id+scopes+row id), 7-day unopened / 15-min opened TTLs,
+    6-digit SMS OTP (outbox in dev; 10-min window, sha256(code+id), 5 wrong
+    entries lock the link durably), timing-safe compare, audited lifecycle
+    (link_opened / otp_sent / otp_failed / otp_verified as actor client).
+  - Portal session (src/lib/portal-context.ts): signed 30-min cookie set
+    after OTP; every request re-loads the token row → revocation kills live
+    sessions; household scoping resolves client+members per request.
+  - Rate limits (src/lib/rate-limit.ts, in-memory fixed-window): link
+    opens + OTP starts per IP, OTP sends per token, verifies per IP,
+    uploads per token. Durable cap (OTP attempts) is in the row, not RAM.
+  - Staff UI: "Portal access" card on client detail — issue to client or
+    trusted helper (name/relationship/phone, optional whole-household),
+    status per link (sent/opened/in use/expired/revoked/locked, phone tail
+    only), revoke. New action portal.manage_links: owner/admin/clerk allow
+    (front desk — ADR-0019), accountant assigned. Link goes out via outbox
+    SMS (+email for non-helper when on file); raw link never returned to
+    the browser or logged.
+  - Portal surfaces (.portal-theme, AAA): /portal/[token] welcome → OTP —
+    the GET only validates; a deliberate Continue stamps opened_at and
+    sends the code (SMS-app prefetch can't burn the window or text codes);
+    three-card home (Send us a document / What we still need / Sign a form
+    [M6 placeholder]) with live missing count; plain-language checklist
+    ("Still needed"/"We have it"/"Not needed this year", per-person
+    grouping for households, "Send it" deep-links into upload).
+  - Uploads: /api/portal/upload → same quarantine→ClamAV→vault pipeline
+    (ADR-0016) with source=portal_upload, uploaded_by null, actor-client
+    audit; token scope decides whose documents; checklist item satisfaction
+    + auto-advance identical to staff path; staff Documents card shows a
+    "Portal" badge. Friendly outcomes only (received / rejected / held) —
+    scanner details never reach the portal.
+  - jscanify capture (ADR-0020): camera preview → snap → OpenCV.js paper
+    extraction → straightened preview → confirm; vendored to public/vendor
+    on postinstall (CDNs stay CSP-blocked); CSP additions kept minimal
+    ('wasm-unsafe-eval', worker-src 'self' blob:); every failure falls back
+    to the native camera input.
+  - Tests: 81 Vitest (12 new in portal.test.ts) + 17 Playwright (3 new in
+    m4.spec.ts; axe wcag2a/aa/aaa + best-practice on every portal screen,
+    zero violations). Production build verified.
+
 ## IN PROGRESS
-- Nothing — stopped at the M3 boundary.
+- Nothing — stopped at the M4 boundary.
 
 ## KNOWN BUGS / LIMITATIONS
 - Scanning is synchronous in the upload request (ADR-0016) — acceptable at
@@ -109,9 +155,25 @@ _Last updated: 2026-07-22 (M3 complete)_
   grows past a few thousand.
 - Households are created inline from the client form; there's no dedicated
   household management page (rename/merge) yet.
+- Portal rate limiter is in-memory per process (fine single-instance; moves
+  to Postgres/Redis if we ever run multiple app instances). The OTP
+  attempt cap is durable in portal_token either way.
+- Portal sessions are a fixed 30 minutes with no renew — an unhurried
+  upload session that runs long just re-opens the link. Revisit if Joey's
+  clients report getting bumped mid-task.
+- The magic-link JWT puts ~300 chars in the SMS URL; fine via outbox/Twilio
+  segments, but a shortener-style compact token is an easy M5+ tweak if
+  carriers mangle long links in practice.
+- Portal "Sign a form" card is a static placeholder until M6.
 
 ## NEEDS SATINDER'S / JOEY'S REVIEW
 - ADR-0004 accountant_scope_mode default (carried over from M0).
+- **M4 manual verification (needs Satinder's phone + a tunnel)**: real-SMS
+  portal flow end-to-end and the jscanify camera capture on a real handset
+  — checklist in TESTING.md ("M4 manual items"). Everything else in the M4
+  acceptance line is green (axe AAA, e2e).
+- ADR-0019: clerks may issue/revoke portal links (front-desk workflow) —
+  confirm Joey's comfortable with that.
 - ~~ADR-0013 stage names~~ RESOLVED by ADR-0015: stages are per-org editable
   (Settings → Workflow stages); Joey tunes his own template.
 
@@ -123,13 +185,15 @@ _Last updated: 2026-07-22 (M3 complete)_
 - AWS budget alarm skipped for now (new account on free credits with
   automatic credit-exhaustion notifications).
 
-## NEXT 3 CONCRETE STEPS (M4 — Client portal)
-1. portal_token table + magic-link JWT (org_id, client_id, scopes; 15-min
-   opened / 7-day unopened TTL) + 6-digit SMS OTP (max 5 attempts, outbox
-   in dev) + rate limits per token+IP.
-2. Token-gated /portal surfaces (.portal-theme, AAA large-type): three-card
-   home, checklist view (client-friendly names), upload → same
-   quarantine/scan pipeline (documents.source=portal_upload).
-3. jscanify capture flow (CSP worker-src/wasm additions — extend
-   deliberately per next.config.ts note) + trusted helpers (household
-   scoping) + axe checks in e2e.
+## NEXT 3 CONCRETE STEPS (M5 — Messaging)
+1. message_template + message tables (RLS), template variables
+   ({client_name}, {missing_docs}, …), Settings → Templates
+   (messages.manage_templates); real Twilio + SES adapters behind the
+   existing outbox pattern (env-gated; outbox/console stays the dev mode).
+2. pg-boss (stack decision: from M5) — job runner wiring, reminder
+   policies keyed on stage CATEGORY (ADR-0015) + checklist state, e.g.
+   "awaiting_docs for N days → nudge missing items"; move document
+   scanning out of the upload request into a job (revisit of ADR-0016).
+3. Mass send (filtered client list → templated batch, per-recipient outbox
+   rows), consent/STOP handling for SMS, send log on the client contact
+   timeline. Accelerated-clock e2e proving a scheduled reminder fires.

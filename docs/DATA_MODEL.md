@@ -163,8 +163,8 @@ in the grid.
 | status | enum document_status | pending_scan → clean / infected / scan_failed (retryable) |
 | scan_result | text | virus signature (infected) or error summary (scan_failed); null when clean |
 | scanned_at | timestamptz | |
-| source | enum document_source | staff_upload; portal_upload arrives with M4 |
-| uploaded_by | text FK staff_user nullable | null for portal uploads later |
+| source | enum document_source | staff_upload, or portal_upload (M4 — "Portal" badge in staff UI) |
+| uploaded_by | text FK staff_user nullable | null for portal uploads (clients are not staff_user rows) |
 
 Lifecycle (ADR-0016): upload route → quarantine + pending_scan → ClamAV →
 clean (promoted to vault) / infected (stays quarantined, never
@@ -184,6 +184,33 @@ downloadable) / scan_failed (retry via documents.manage). Downloads are
 State changes trigger applyAutoAdvance (ADR-0017): category-keyed, forward
 only, never past awaiting_docs→in_progress boundaries.
 
+## Client portal (M4, RLS FORCEd — drizzle/0014_m4_rls.sql)
+
+### portal_token
+| field | type | notes |
+|---|---|---|
+| client_id | uuid FK client (cascade) | the client the link acts for |
+| token_hash | text unique | sha256 of the raw magic-link JWT (ADR-0003); raw token only in the sent link |
+| recipient_name | text | client themselves or a trusted helper |
+| recipient_phone | text | E.164; the SMS OTP goes here |
+| is_helper, helper_relationship | bool, text | trusted-helper links; relationship is display-only |
+| include_household | bool | widens read/upload scope to household members |
+| scopes | text[] | 'view','upload' (M4); 'sign' arrives with M6 |
+| expires_at | timestamptz | creation + 7 days (matches the JWT exp) |
+| opened_at | timestamptz | first deliberate open; the LINK dies 15 min later |
+| otp_hash, otp_expires_at | text, timestamptz | sha256(code+token id), 10-min window; raw code never stored |
+| otp_attempts | int | durable cap: 5 wrong entries lock the link for good |
+| verified_at | timestamptz | OTP passed; portal session cookie takes over (30 min) |
+| revoked_at | timestamptz | staff kill switch — also ends live sessions |
+| created_by | text FK staff_user | |
+
+Lifecycle (ADR-0018): staff issue (portal.manage_links) → SMS/email carries
+`/portal/<jwt>` → deliberate "Continue" stamps opened_at + texts the OTP
+(never on GET — messenger prefetchers) → verified_at + signed session
+cookie. Every portal request re-loads this row, so revocation is immediate.
+No GUC-as-credential policy needed: the JWT's signed org_id claim arms RLS
+before the hash lookup.
+
 ## Enums
 subscription_status: trialing, active, past_due, canceled
 staff_role: owner, admin, accountant, clerk
@@ -202,6 +229,6 @@ document_source: staff_upload, portal_upload
 checklist_item_status: missing, received, waived
 
 ## Planned (added at their milestone; spec §3)
-trusted_helper, signature_request, cra_authorization, message, portal_token,
-time_entry, invoice, ai_interaction, import_batch, import_mapping_template,
-staging tables.
+signature_request, cra_authorization, message, time_entry, invoice,
+ai_interaction, import_batch, import_mapping_template, staging tables.
+(trusted_helper is folded into portal_token — is_helper/include_household.)

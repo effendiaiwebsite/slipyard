@@ -90,6 +90,38 @@ own fixtures (random UUIDs) and clean up — they don't depend on the seed.
   queue); Returns page missing-docs rollup matches seed; org-2 owner sees
   only org-2 returns.
 
+## Automated coverage (M4)
+- `tests/portal.test.ts` — magic-link mint/validate: raw JWT never stored
+  (sha256 only, ADR-0003), garbage/tampered/unknown → 'invalid', revocation
+  honoured, 7-day unopened + 15-minute opened expiry; OTP challenge: code
+  recovered from the outbox SMS (as a real client would), correct code
+  verifies, wrong codes count durably and the 5th locks the link for good
+  (correct code afterwards still refused), expired codes refused but a
+  reissued code works, re-open inside the window reuses the outstanding
+  code; tenancy: org B can't read/update org A tokens by id OR hash,
+  cross-org permission references throw; matrix: clerk may manage links,
+  accountant assigned-only; rate limiter allows→blocks→resets per window.
+- `e2e/m4.spec.ts` — full portal journey with REAL bucket + clamd: clerk
+  issues a link from the client page; the magic link + OTP are read from
+  the outbox exactly as texted; the GET sends NO code (prefetch safety —
+  count asserted), the deliberate Continue does; wrong code → friendly
+  error, right code → three-card home with live missing-doc count;
+  checklist speaks plain language ("Still needed" / "We have it"); "Send
+  it" preselects the item and the upload runs the real scan pipeline →
+  item checked off client-side, "In vault" + "Portal" badge staff-side;
+  revoking an in-use link bounces the client's next navigation to the
+  session-ended explainer; org-2 client pages show only org-2 links.
+  **Axe runs on every portal screen** (wcag2a/aa/aaa + best-practice tags,
+  including color-contrast-enhanced) and must report zero violations.
+
+### M4 manual items (pending — need Satinder)
+- [ ] Real-phone flow via tunnel (ngrok/cloudflared → APP_URL override):
+  receive the SMS on a real handset, open the link, pass the OTP, run the
+  jscanify camera capture on a paper page, confirm the straightened photo
+  uploads and checks the item off.
+- [ ] jscanify capture on desktop Chrome with a webcam (fallback path:
+  deny camera permission → native file input takes over).
+
 ### M3 dev-machine caveat: host antivirus vs EICAR
 Norton on this dev machine intercepts EICAR uploads to localhost over HTTP
 (threat "WICAR Test - NOT A VIRUS"), resetting the connection before the app

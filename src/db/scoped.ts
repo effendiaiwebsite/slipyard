@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, isNull, max, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, max, ne, sql } from "drizzle-orm";
 import { db, schema } from ".";
 import { DEFAULT_ENGAGEMENT_STAGES, type StageCategory } from "./schema";
 
@@ -954,6 +954,173 @@ export class OrgScope {
           )
         )
         .orderBy(asc(schema.checklistItem.position))
+    );
+  }
+
+  // ---- portal tokens (M4) -----------------------------------------------------
+
+  async createPortalToken(fields: {
+    id: string;
+    clientId: string;
+    tokenHash: string;
+    recipientName: string;
+    recipientPhone: string;
+    isHelper?: boolean;
+    helperRelationship?: string | null;
+    includeHousehold?: boolean;
+    scopes?: string[];
+    expiresAt: Date;
+    createdBy?: string | null;
+  }) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.portalToken)
+        .values({ orgId: this.orgId, ...fields })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async getPortalToken(tokenId: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.portalToken)
+        .where(
+          and(eq(schema.portalToken.orgId, this.orgId), eq(schema.portalToken.id, tokenId))
+        );
+      return rows[0] ?? null;
+    });
+  }
+
+  async getPortalTokenByHash(tokenHash: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.portalToken)
+        .where(
+          and(
+            eq(schema.portalToken.orgId, this.orgId),
+            eq(schema.portalToken.tokenHash, tokenHash)
+          )
+        );
+      return rows[0] ?? null;
+    });
+  }
+
+  /** Staff UI: links for one client, newest first (active and dead alike). */
+  async listPortalTokensForClient(clientId: string) {
+    return this.tx((tx) =>
+      tx
+        .select({ token: schema.portalToken, createdByName: schema.staffUser.name })
+        .from(schema.portalToken)
+        .leftJoin(schema.staffUser, eq(schema.portalToken.createdBy, schema.staffUser.id))
+        .where(
+          and(
+            eq(schema.portalToken.orgId, this.orgId),
+            eq(schema.portalToken.clientId, clientId)
+          )
+        )
+        .orderBy(desc(schema.portalToken.createdAt))
+        .limit(20)
+    );
+  }
+
+  async updatePortalToken(
+    tokenId: string,
+    fields: Partial<{
+      openedAt: Date | null;
+      otpHash: string | null;
+      otpExpiresAt: Date | null;
+      otpAttempts: number;
+      verifiedAt: Date | null;
+      revokedAt: Date | null;
+    }>
+  ) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.portalToken)
+        .set({ ...fields, updatedAt: new Date() })
+        .where(
+          and(eq(schema.portalToken.orgId, this.orgId), eq(schema.portalToken.id, tokenId))
+        )
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  /** Atomic wrong-OTP counter — concurrent guesses can't skip the cap. */
+  async incrementPortalOtpAttempts(tokenId: string): Promise<number> {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.portalToken)
+        .set({ otpAttempts: sql`${schema.portalToken.otpAttempts} + 1`, updatedAt: new Date() })
+        .where(
+          and(eq(schema.portalToken.orgId, this.orgId), eq(schema.portalToken.id, tokenId))
+        )
+        .returning({ otpAttempts: schema.portalToken.otpAttempts });
+      return rows[0]?.otpAttempts ?? Number.MAX_SAFE_INTEGER;
+    });
+  }
+
+  // ---- portal reads (M4 — token-scoped, no staff user) ------------------------
+
+  /** Everyone in a household (portal trusted-helper scope). */
+  async listHouseholdClients(householdId: string) {
+    return this.tx((tx) =>
+      tx
+        .select()
+        .from(schema.client)
+        .where(
+          and(
+            eq(schema.client.orgId, this.orgId),
+            eq(schema.client.householdId, householdId),
+            eq(schema.client.status, "active")
+          )
+        )
+        .orderBy(schema.client.displayName)
+    );
+  }
+
+  /** Engagements (with stage) for a set of clients — portal home/checklist. */
+  async listEngagementsForClients(clientIds: string[]) {
+    if (clientIds.length === 0) return [];
+    return this.tx((tx) =>
+      tx
+        .select({
+          engagement: schema.engagement,
+          stage: schema.engagementStage,
+          clientName: schema.client.displayName,
+        })
+        .from(schema.engagement)
+        .innerJoin(
+          schema.engagementStage,
+          eq(schema.engagement.stageId, schema.engagementStage.id)
+        )
+        .innerJoin(schema.client, eq(schema.engagement.clientId, schema.client.id))
+        .where(
+          and(
+            eq(schema.engagement.orgId, this.orgId),
+            inArray(schema.engagement.clientId, clientIds)
+          )
+        )
+        .orderBy(desc(schema.engagement.taxYear), desc(schema.engagement.createdAt))
+    );
+  }
+
+  async listChecklistItemsForEngagements(engagementIds: string[]) {
+    if (engagementIds.length === 0) return [];
+    return this.tx((tx) =>
+      tx
+        .select()
+        .from(schema.checklistItem)
+        .where(
+          and(
+            eq(schema.checklistItem.orgId, this.orgId),
+            inArray(schema.checklistItem.engagementId, engagementIds)
+          )
+        )
+        .orderBy(asc(schema.checklistItem.position), asc(schema.checklistItem.createdAt))
     );
   }
 

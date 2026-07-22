@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Prior UI-only mock kept for visual reference — never linted, never imported.
     "design-reference/**",
+    // Vendored browser libs (jscanify/OpenCV.js) copied on postinstall.
+    "public/vendor/**",
   ]),
 ]);
 

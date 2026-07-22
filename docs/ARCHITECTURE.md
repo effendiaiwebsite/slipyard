@@ -87,9 +87,19 @@ retryable. Uploading against a checklist item marks it received and runs
 the auto-advance rules (category-keyed, ADR-0017). Reads via 5-min presigned
 GET, clean documents only. pg-boss takes over scanning at M5.
 
-**Portal magic link (M4)** — staff/reminder sends link with JWT (embeds
-org_id, client_id, scopes; 15-min opened / 7-day unopened TTL) → 6-digit SMS
-OTP (max 5 attempts) → three-card home. Rate-limited per token + IP.
+**Portal magic link (M4, ADR-0018)** — staff issue a link from the client
+detail page (portal.manage_links; clerk-friendly, ADR-0019) → SMS/email
+carries `/portal/<jwt>` (JWT embeds org_id/client_id/scopes; the row stores
+only its sha256). The GET only validates — a deliberate "Continue" press
+stamps opened_at (link dies 15 min later; unopened links last 7 days) and
+texts the 6-digit OTP (10-min, 5 wrong entries lock the link durably) →
+signed 30-min session cookie → three-card home (Send a document / What we
+still need / Sign a form [M6]). Trusted helpers get their own link (OTP to
+THEIR phone), optionally scoped to the whole household. Uploads POST to
+/api/portal/upload into the same quarantine/scan pipeline with
+source=portal_upload; jscanify (vendored, ADR-0020) straightens phone
+photos. Every anonymous endpoint is rate-limited per token + IP; every
+portal request re-loads the token row, so staff revocation is immediate.
 
 **Signing (M6)** — signature_pad → pdf-lib stamps signature + datetime
 (YYYY/MM/DD HH:MM:SS org TZ) + audit page (signer, method, IP, token id,

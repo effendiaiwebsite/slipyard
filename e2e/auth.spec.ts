@@ -13,7 +13,9 @@ test("marketing, login, and portal shells render", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /practice CRM built for Canadian/i })).toBeVisible();
 
   await page.goto("/portal");
-  await expect(page.getByRole("heading", { name: /link isn't ready yet/i })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /this page needs a personal link/i })
+  ).toBeVisible();
 
   await page.goto("/login");
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();

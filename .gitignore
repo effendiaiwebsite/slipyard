@@ -51,3 +51,6 @@ design-reference/**/dev.log
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# vendored browser libs copied from node_modules on postinstall (scripts/copy-vendor.mjs)
+/public/vendor/

@@ -64,7 +64,7 @@ async function main() {
 
   // Wipe in FK order. TRUNCATE ... CASCADE keeps this list forgiving.
   await pool.query(
-    `truncate table checklist_item, document, contact_log, client_note,
+    `truncate table portal_token, checklist_item, document, contact_log, client_note,
      engagement, engagement_stage, client, household, audit_log, invitation,
      org_membership, auth_two_factor, auth_verification, auth_account,
      auth_session, staff_user, org cascade`
@@ -469,6 +469,50 @@ async function main() {
     { id: item(11), orgId: SEED.org2, engagementId: eng(9), title: "T4 / employment income slips", required: true, status: "missing", position: 0 },
   ]);
 
+  // ---- M4: portal tokens ------------------------------------------------------
+  // Display-only rows for the staff "Portal access" card. The token_hash
+  // values are fabricated (no signed JWT exists for them), so these links
+  // can never be opened — e2e issues REAL links through the UI instead.
+  await db.insert(schema.portalToken).values([
+    {
+      id: "f0f00001-0000-4000-8000-000000000001",
+      orgId: SEED.org1,
+      clientId: c.marc,
+      tokenHash: "seed-fixture-hash-not-a-real-token-0001",
+      recipientName: "Claire Desjardins",
+      recipientPhone: "+14165550199",
+      isHelper: true,
+      helperRelationship: "daughter",
+      includeHousehold: true,
+      expiresAt: new Date("2026-07-27T12:00:00Z"),
+      openedAt: new Date("2026-07-20T15:00:00Z"),
+      verifiedAt: new Date("2026-07-20T15:02:00Z"),
+      createdBy: u.priya,
+    },
+    {
+      id: "f0f00001-0000-4000-8000-000000000002",
+      orgId: SEED.org1,
+      clientId: c.an,
+      tokenHash: "seed-fixture-hash-not-a-real-token-0002",
+      recipientName: "An Nguyen",
+      recipientPhone: "+14165550103",
+      expiresAt: new Date("2026-07-24T12:00:00Z"),
+      revokedAt: new Date("2026-07-19T09:00:00Z"),
+      createdBy: u.maria,
+    },
+    // Org 2 — isolation.
+    {
+      id: "f0f00002-0000-4000-8000-000000000001",
+      orgId: SEED.org2,
+      clientId: c.northClient,
+      tokenHash: "seed-fixture-hash-not-a-real-token-0003",
+      recipientName: "Wendy Moosomin",
+      recipientPhone: "+12045550110",
+      expiresAt: new Date("2026-07-27T12:00:00Z"),
+      createdBy: u.northOwner,
+    },
+  ]);
+
   await db.insert(schema.auditLog).values({
     orgId: SEED.org1,
     actorType: "system",
@@ -480,7 +524,7 @@ async function main() {
 
   await pool.end();
 
-  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements, 6 documents, 11 checklist items.");
+  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements, 6 documents, 11 checklist items, 3 portal tokens.");
   console.log("Dev logins (all password: %s):", SEED.password);
   for (const s of staff) console.log(`  ${s.role.padEnd(10)} ${s.email}  (${s.orgId === SEED.org1 ? "Lakeside CPA" : "Northern Tax"})`);
   console.log("First login will require TOTP enrollment (mandatory 2FA).");
