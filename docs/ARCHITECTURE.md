@@ -78,9 +78,14 @@ revocable → /join/[token] validates via the token-hash GUC policy
 (email must match) → acceptInvitation transaction (membership + stamp +
 audit) → seat quantity syncs → forced TOTP → personal dashboard.
 
-**Document upload (M3)** — browser → presigned POST (type+25 MB caps) →
-`org/{orgId}/quarantine/` → pg-boss scan job (ClamAV) → promote to vault or
-flag. Reads via 5-min presigned GET.
+**Document upload (M3, ADR-0016)** — browser → multipart POST
+/api/vault/upload (same-origin enforced; type allowlist + 25 MB cap) →
+bytes land at `org/{orgId}/quarantine/{docId}/` → synchronous ClamAV
+INSTREAM scan → clean: promoted to `org/{orgId}/vault/{docId}/` · infected:
+stays quarantined, flagged, never downloadable · scanner down: scan_failed,
+retryable. Uploading against a checklist item marks it received and runs
+the auto-advance rules (category-keyed, ADR-0017). Reads via 5-min presigned
+GET, clean documents only. pg-boss takes over scanning at M5.
 
 **Portal magic link (M4)** — staff/reminder sends link with JWT (embeds
 org_id, client_id, scopes; 15-min opened / 7-day unopened TTL) → 6-digit SMS

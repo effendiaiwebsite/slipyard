@@ -710,6 +710,253 @@ export class OrgScope {
     });
   }
 
+  // ---- documents (M3) ---------------------------------------------------------
+
+  async createDocument(fields: {
+    clientId: string;
+    engagementId?: string | null;
+    filename: string;
+    contentType: string;
+    sizeBytes: number;
+    s3Key: string;
+    status?: "pending_scan" | "clean" | "infected" | "scan_failed";
+    source?: "staff_upload" | "portal_upload";
+    uploadedBy?: string | null;
+  }) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.document)
+        .values({ orgId: this.orgId, ...fields })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async getDocument(documentId: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.document)
+        .where(and(eq(schema.document.orgId, this.orgId), eq(schema.document.id, documentId)));
+      return rows[0] ?? null;
+    });
+  }
+
+  async updateDocument(
+    documentId: string,
+    fields: Partial<{
+      engagementId: string | null;
+      s3Key: string;
+      status: "pending_scan" | "clean" | "infected" | "scan_failed";
+      scanResult: string | null;
+      scannedAt: Date | null;
+    }>
+  ) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.document)
+        .set({ ...fields, updatedAt: new Date() })
+        .where(and(eq(schema.document.orgId, this.orgId), eq(schema.document.id, documentId)))
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  /** Row delete — callers handle the S3 object and restrict to infected/scan_failed. */
+  async deleteDocument(documentId: string) {
+    return this.tx((tx) =>
+      tx
+        .delete(schema.document)
+        .where(and(eq(schema.document.orgId, this.orgId), eq(schema.document.id, documentId)))
+    );
+  }
+
+  async listDocumentsByClient(clientId: string) {
+    return this.tx((tx) =>
+      tx
+        .select({ document: schema.document, uploaderName: schema.staffUser.name })
+        .from(schema.document)
+        .leftJoin(schema.staffUser, eq(schema.document.uploadedBy, schema.staffUser.id))
+        .where(
+          and(eq(schema.document.orgId, this.orgId), eq(schema.document.clientId, clientId))
+        )
+        .orderBy(desc(schema.document.createdAt))
+    );
+  }
+
+  /**
+   * Intake queue: documents not yet filed against an engagement. Clerk
+   * uploads land here; assignment (documents.manage) files them.
+   */
+  async listIntakeDocuments() {
+    return this.tx((tx) =>
+      tx
+        .select({
+          document: schema.document,
+          clientName: schema.client.displayName,
+          uploaderName: schema.staffUser.name,
+        })
+        .from(schema.document)
+        .innerJoin(schema.client, eq(schema.document.clientId, schema.client.id))
+        .leftJoin(schema.staffUser, eq(schema.document.uploadedBy, schema.staffUser.id))
+        .where(and(eq(schema.document.orgId, this.orgId), isNull(schema.document.engagementId)))
+        .orderBy(desc(schema.document.createdAt))
+    );
+  }
+
+  // ---- checklists (M3) --------------------------------------------------------
+
+  /** Bulk insert at instantiation (template) — positions come from the caller. */
+  async createChecklistItems(
+    engagementId: string,
+    items: Array<{ title: string; required: boolean; position: number }>
+  ) {
+    if (items.length === 0) return [];
+    return this.tx((tx) =>
+      tx
+        .insert(schema.checklistItem)
+        .values(items.map((i) => ({ orgId: this.orgId, engagementId, ...i })))
+        .returning()
+    );
+  }
+
+  async listChecklistItems(engagementId: string) {
+    return this.tx((tx) =>
+      tx
+        .select()
+        .from(schema.checklistItem)
+        .where(
+          and(
+            eq(schema.checklistItem.orgId, this.orgId),
+            eq(schema.checklistItem.engagementId, engagementId)
+          )
+        )
+        .orderBy(asc(schema.checklistItem.position), asc(schema.checklistItem.createdAt))
+    );
+  }
+
+  /** All items for a client's engagements in one query (detail page). */
+  async listChecklistItemsForClient(clientId: string) {
+    return this.tx((tx) =>
+      tx
+        .select({ item: schema.checklistItem })
+        .from(schema.checklistItem)
+        .innerJoin(
+          schema.engagement,
+          eq(schema.checklistItem.engagementId, schema.engagement.id)
+        )
+        .where(
+          and(
+            eq(schema.checklistItem.orgId, this.orgId),
+            eq(schema.engagement.clientId, clientId)
+          )
+        )
+        .orderBy(asc(schema.checklistItem.position), asc(schema.checklistItem.createdAt))
+    );
+  }
+
+  async getChecklistItem(itemId: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.checklistItem)
+        .where(
+          and(eq(schema.checklistItem.orgId, this.orgId), eq(schema.checklistItem.id, itemId))
+        );
+      return rows[0] ?? null;
+    });
+  }
+
+  async addChecklistItem(engagementId: string, title: string, required: boolean) {
+    return this.tx(async (tx) => {
+      const [{ maxPos }] = await tx
+        .select({ maxPos: sql<number>`coalesce(max(position), -1)::int` })
+        .from(schema.checklistItem)
+        .where(
+          and(
+            eq(schema.checklistItem.orgId, this.orgId),
+            eq(schema.checklistItem.engagementId, engagementId)
+          )
+        );
+      const rows = await tx
+        .insert(schema.checklistItem)
+        .values({ orgId: this.orgId, engagementId, title, required, position: maxPos + 1 })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async updateChecklistItem(
+    itemId: string,
+    fields: Partial<{
+      status: "missing" | "received" | "waived";
+      documentId: string | null;
+      title: string;
+      required: boolean;
+    }>
+  ) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.checklistItem)
+        .set({ ...fields, updatedAt: new Date() })
+        .where(
+          and(eq(schema.checklistItem.orgId, this.orgId), eq(schema.checklistItem.id, itemId))
+        )
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  async deleteChecklistItem(itemId: string) {
+    return this.tx((tx) =>
+      tx
+        .delete(schema.checklistItem)
+        .where(
+          and(eq(schema.checklistItem.orgId, this.orgId), eq(schema.checklistItem.id, itemId))
+        )
+    );
+  }
+
+  /**
+   * Returns/missing-docs rollup: per engagement, how many required items
+   * exist and how many are still missing (received/waived count as done).
+   */
+  async listChecklistSummaries() {
+    return this.tx((tx) =>
+      tx
+        .select({
+          engagementId: schema.checklistItem.engagementId,
+          total: sql<number>`count(*)::int`,
+          requiredTotal: sql<number>`count(*) filter (where required)::int`,
+          requiredMissing: sql<number>`count(*) filter (where required and status = 'missing')::int`,
+        })
+        .from(schema.checklistItem)
+        .where(eq(schema.checklistItem.orgId, this.orgId))
+        .groupBy(schema.checklistItem.engagementId)
+    );
+  }
+
+  /** All still-missing items (missing-docs dashboard + intake assignment). */
+  async listMissingChecklistItems() {
+    return this.tx((tx) =>
+      tx
+        .select({
+          id: schema.checklistItem.id,
+          engagementId: schema.checklistItem.engagementId,
+          title: schema.checklistItem.title,
+          required: schema.checklistItem.required,
+        })
+        .from(schema.checklistItem)
+        .where(
+          and(
+            eq(schema.checklistItem.orgId, this.orgId),
+            eq(schema.checklistItem.status, "missing")
+          )
+        )
+        .orderBy(asc(schema.checklistItem.position))
+    );
+  }
+
   /** Dashboard: engagement counts per stage (optionally one assignee's). */
   async countEngagementsByStage(assignedToId?: string) {
     return this.tx(async (tx) => {

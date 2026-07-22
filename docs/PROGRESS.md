@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-21 (M2 complete + customizable workflow stages)_
+_Last updated: 2026-07-22 (M3 complete)_
 
 ## DONE
 - **M0 — Foundation** (commit `M0: ...`): scaffold, RLS + OrgScope, better-auth
@@ -46,11 +46,58 @@ _Last updated: 2026-07-21 (M2 complete + customizable workflow stages)_
   transitions, grid badges, dashboard counts all follow org stages; automation
   hooks (M3+) must key on stage.category only. 54 Vitest + 10 Playwright.
 
+- **M3 — Vault & checklists** (this commit):
+  - Schema + FORCEd RLS (0011/0012): document (quarantine→vault s3_key,
+    status pending_scan/clean/infected/scan_failed, scan_result, source,
+    uploaded_by), checklist_item (required, missing/received/waived,
+    document link, position).
+  - Upload pipeline (ADR-0016): /api/vault/upload route (multipart,
+    same-origin check, type allowlist, 25 MB) → org/{orgId}/quarantine/ →
+    synchronous ClamAV INSTREAM (src/lib/clamav.ts) → promote to vault
+    (CopyObject+Delete) or flag; scan_failed retryable, never treated as
+    clean; downloads = 5-min presigned GET, clean docs only, audited.
+    src/lib/storage.ts (S3 client, keys, sanitizeFilename, presign);
+    CLAMAV_HOST/PORT in env.ts; staffApiContext() (JSON-error variant of
+    requireStaff) in context.ts.
+  - Checklist engine (src/lib/checklists.ts): per-type templates
+    (t1/t2/t3; 'other' starts empty), instantiated on engagement creation +
+    on demand ("Generate checklist"); custom items add/remove; manual
+    received/waived/missing; auto-advance ADR-0017 (category-keyed, forward
+    only, audited as system engagements.auto_advance).
+  - UI: client detail Documents card (upload, status badges, download,
+    rescan, remove, file-against-engagement) + per-engagement checklist
+    panel (per-item upload/got-it/waive/reset/remove, add item); intake
+    queue at /app/tax/intake (clerk upload path, manage-gated filing with
+    optional checklist slot); Returns page /app/tax (year filter,
+    stage + checklist progress + missing-required titles per return,
+    missing-docs stat cards).
+  - Seed: 6 documents (vault/quarantine/infected/scan_failed states,
+    fixture objects actually uploaded to the dev bucket when S3 creds
+    present) + 11 checklist items incl. org-2 isolation rows.
+  - Tests: 69 Vitest (15 new in documents.test.ts) + 14 Playwright (4 new
+    in m3.spec.ts, running against the REAL dev bucket + local clamd).
+  - Dev-machine gotcha (documented in TESTING.md): Norton intercepts EICAR
+    on localhost HTTP and then blacklists the upload URL (connection resets
+    with an empty server log) — endpoint renamed to /api/vault/upload; e2e
+    infected-path assertions use a seeded fixture instead of live EICAR.
+
 ## IN PROGRESS
-- Nothing — stopped at the M2 boundary (plus the stage-customization
-  follow-up above).
+- Nothing — stopped at the M3 boundary.
 
 ## KNOWN BUGS / LIMITATIONS
+- Scanning is synchronous in the upload request (ADR-0016) — acceptable at
+  25 MB/small-firm scale; moves to pg-boss at M5.
+- KMS_KEY_ID intentionally empty in dev (S3 default encryption); real KMS
+  key at production setup.
+- Host antivirus (Norton) can blacklist upload URLs after seeing EICAR-like
+  content on localhost — see TESTING.md before renaming /api/vault/upload
+  or adding AV-test uploads.
+- Vault documents have no delete path (7-year retention posture); M9 adds
+  the retention/review flow. Quarantined (infected/scan_failed) files are
+  deletable via documents.manage.
+- Deleting an org cascades DB rows but leaves S3 objects under
+  org/{orgId}/ — S3 lifecycle/cleanup lands with the M9 backup/retention
+  scripts.
 - Google-only accounts still can't enroll TOTP (twoFactor.enable needs a
   password). Candidate fix in a later milestone: better-auth setPassword
   path for OAuth-only accounts.
@@ -69,21 +116,20 @@ _Last updated: 2026-07-21 (M2 complete + customizable workflow stages)_
   (Settings → Workflow stages); Joey tunes his own template.
 
 ## M3 PREREQUISITES (done 2026-07-21 with Satinder)
-- Dev S3 bucket `accountant-crm-dev` (ca-central-1, versioned, private)
-  created; IAM user `accountant-crm-dev-app` with bucket-scoped policy; keys
-  in .env (AWS_ACCESS_KEY_ID/SECRET, S3_BUCKET). Verified live: put→get→
-  delete round-trip passed. KMS_KEY_ID deliberately empty in dev (S3 default
-  encryption; real KMS key at production setup). @aws-sdk/client-s3 installed.
-- Docker Desktop installed via winget (Windows 11 Home / WSL2) — resolves
-  ADR-0007's ClamAV question. First-launch/engine check + `docker compose up
-  -d clamav` still pending at next session start.
+- Dev S3 bucket `accountant-crm-dev` (ca-central-1, versioned, private);
+  IAM user `accountant-crm-dev-app`; keys in .env. KMS deferred to prod.
+- Docker Desktop (Windows 11 Home / WSL2); crm-clamav container healthy,
+  verified 2026-07-22 (PING/clean/EICAR over INSTREAM).
 - AWS budget alarm skipped for now (new account on free credits with
   automatic credit-exhaustion notifications).
 
-## NEXT 3 CONCRETE STEPS (M3 — Vault & checklists)
-1. S3 pipeline (org/{orgId}/quarantine|vault keys), presigned POST with
-   type/25MB caps, ClamAV scan job (docker compose clamd), promote/flag flow.
-2. document + checklist_item tables (+ RLS), checklist engine seeded from
-   engagement type, intake queue UI (clerk documents.intake_upload path).
-3. Missing-docs dashboard + Returns page; auto-advance engagement to
-   awaiting_docs/in_preparation on checklist state changes.
+## NEXT 3 CONCRETE STEPS (M4 — Client portal)
+1. portal_token table + magic-link JWT (org_id, client_id, scopes; 15-min
+   opened / 7-day unopened TTL) + 6-digit SMS OTP (max 5 attempts, outbox
+   in dev) + rate limits per token+IP.
+2. Token-gated /portal surfaces (.portal-theme, AAA large-type): three-card
+   home, checklist view (client-friendly names), upload → same
+   quarantine/scan pipeline (documents.source=portal_upload).
+3. jscanify capture flow (CSP worker-src/wasm additions — extend
+   deliberately per next.config.ts note) + trusted helpers (household
+   scoping) + axe checks in e2e.

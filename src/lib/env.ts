@@ -43,6 +43,10 @@ const schema = z.object({
   S3_BUCKET: optionalStr,
   KMS_KEY_ID: optionalStr,
 
+  // ClamAV (required from M3; docker compose up -d clamav)
+  CLAMAV_HOST: z.preprocess(emptyToUndefined, z.string().default("127.0.0.1")),
+  CLAMAV_PORT: z.preprocess(emptyToUndefined, z.coerce.number().int().default(3310)),
+
   // Twilio (optional until M5; outbox mode without it)
   TWILIO_ACCOUNT_SID: optionalStr,
   TWILIO_AUTH_TOKEN: optionalStr,

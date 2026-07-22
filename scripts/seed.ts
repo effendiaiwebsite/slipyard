@@ -3,6 +3,8 @@ import { hashPassword } from "better-auth/crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { encryptField } from "../src/lib/crypto";
+import { features } from "../src/lib/env";
+import { putObject } from "../src/lib/storage";
 import * as schema from "../src/db/schema";
 import { DEFAULT_ENGAGEMENT_STAGES } from "../src/db/schema";
 import { adminUrl, APP_DB_NAME } from "./db-lib";
@@ -62,9 +64,10 @@ async function main() {
 
   // Wipe in FK order. TRUNCATE ... CASCADE keeps this list forgiving.
   await pool.query(
-    `truncate table contact_log, client_note, engagement, engagement_stage,
-     client, household, audit_log, invitation, org_membership, auth_two_factor,
-     auth_verification, auth_account, auth_session, staff_user, org cascade`
+    `truncate table checklist_item, document, contact_log, client_note,
+     engagement, engagement_stage, client, household, audit_log, invitation,
+     org_membership, auth_two_factor, auth_verification, auth_account,
+     auth_session, staff_user, org cascade`
   );
 
   await db.insert(schema.org).values([
@@ -325,6 +328,147 @@ async function main() {
     { orgId: SEED.org1, clientId: c.pinesBirch, channel: "meeting", summary: "Year-end planning meeting with owners; new truck purchase — CCA discussion.", occurredAt: new Date("2026-07-10T18:00:00Z"), createdBy: u.sam },
   ]);
 
+  // ---- M3: documents + checklists --------------------------------------------
+
+  // Deterministic document rows. When the dev bucket is configured the tiny
+  // fixture bodies are ACTUALLY uploaded so presigned downloads work; without
+  // S3 the rows still exist and downloads simply 404 in dev.
+  const docs = [
+    {
+      id: "d0c00001-0000-4000-8000-000000000001",
+      orgId: SEED.org1,
+      clientId: c.ruth,
+      engagementId: eng(5),
+      filename: "T4 - Ruth Okafor 2025.pdf",
+      contentType: "application/pdf",
+      status: "clean" as const,
+      uploadedBy: u.priya,
+      body: "Seed fixture: fictional T4 slip for Ruth Okafor (not a real document).",
+    },
+    {
+      id: "d0c00001-0000-4000-8000-000000000002",
+      orgId: SEED.org1,
+      clientId: c.marc,
+      engagementId: null,
+      filename: "Bank slips folder scan.pdf",
+      contentType: "application/pdf",
+      status: "clean" as const,
+      uploadedBy: u.priya,
+      body: "Seed fixture: fictional scanned bank slips for Marc Desjardins.",
+    },
+    {
+      id: "d0c00001-0000-4000-8000-000000000003",
+      orgId: SEED.org1,
+      clientId: c.an,
+      engagementId: eng(3),
+      filename: "HST summary 2025.csv",
+      contentType: "text/csv",
+      status: "clean" as const,
+      uploadedBy: u.joey,
+      body: "quarter,collected,paid\nQ1,4100.00,1200.00\nQ2,3900.00,900.00",
+    },
+    {
+      id: "d0c00001-0000-4000-8000-000000000004",
+      orgId: SEED.org1,
+      clientId: c.sofia,
+      engagementId: null,
+      filename: "photo of T4.jpg",
+      contentType: "image/jpeg",
+      status: "scan_failed" as const,
+      uploadedBy: u.priya,
+      body: "Seed fixture: pretend photo bytes (scanner was down when this arrived).",
+    },
+    // Infected fixture: the ROW says infected (as if ClamAV flagged it); the
+    // seeded S3 body is benign text — never store real test-virus bytes, and
+    // host AV (e.g. Norton) blocks EICAR uploads through localhost anyway.
+    {
+      id: "d0c00001-0000-4000-8000-000000000005",
+      orgId: SEED.org1,
+      clientId: c.sofia,
+      engagementId: null,
+      filename: "invoice-attachment.pdf",
+      contentType: "application/pdf",
+      status: "infected" as const,
+      uploadedBy: u.priya,
+      body: "Seed fixture: benign placeholder for a document flagged as infected.",
+    },
+    // Org 2 — isolation: must never surface in Lakeside queries.
+    {
+      id: "d0c00002-0000-4000-8000-000000000001",
+      orgId: SEED.org2,
+      clientId: c.northClient,
+      engagementId: null,
+      filename: "T4 Wendy.pdf",
+      contentType: "application/pdf",
+      status: "clean" as const,
+      uploadedBy: u.northOwner,
+      body: "Seed fixture: org-2 document.",
+    },
+  ];
+
+  await db.insert(schema.document).values(
+    docs.map((d) => ({
+      id: d.id,
+      orgId: d.orgId,
+      clientId: d.clientId,
+      engagementId: d.engagementId,
+      filename: d.filename,
+      contentType: d.contentType,
+      sizeBytes: Buffer.byteLength(d.body),
+      s3Key:
+        d.status === "clean"
+          ? `org/${d.orgId}/vault/${d.id}/${d.filename}`
+          : `org/${d.orgId}/quarantine/${d.id}/${d.filename}`,
+      status: d.status,
+      scanResult:
+        d.status === "scan_failed"
+          ? "seeded while scanner offline"
+          : d.status === "infected"
+            ? "Eicar-Test-Signature"
+            : null,
+      scannedAt: new Date("2026-07-18T15:00:00Z"),
+      source: "staff_upload" as const,
+      uploadedBy: d.uploadedBy,
+    }))
+  );
+
+  if (features.s3) {
+    for (const d of docs) {
+      const key =
+        d.status === "clean"
+          ? `org/${d.orgId}/vault/${d.id}/${d.filename}`
+          : `org/${d.orgId}/quarantine/${d.id}/${d.filename}`;
+      await putObject(key, Buffer.from(d.body), d.contentType);
+    }
+    console.log(`Uploaded ${docs.length} fixture objects to s3://${process.env.S3_BUCKET}.`);
+  } else {
+    console.log("S3 not configured — document rows seeded without objects (downloads will 404).");
+  }
+
+  // Checklists in every interesting state:
+  //  - Ruth (awaiting_docs): NOA still missing → missing-docs dashboard hit
+  //  - An (in_review): everything required is in
+  //  - Pines & Birch (T2, in_preparation): required in, optionals open
+  //  - Sofia (not_started): NO checklist — demos the "generate" button
+  const item = (n: number) => `c4ec0001-0000-4000-8000-0000000000${n.toString(16).padStart(2, "0")}`;
+  await db.insert(schema.checklistItem).values([
+    // Ruth — eng(5), T1 template subset with one received item linked to doc 1.
+    { id: item(1), orgId: SEED.org1, engagementId: eng(5), title: "Prior-year Notice of Assessment", required: true, status: "missing", position: 0 },
+    { id: item(2), orgId: SEED.org1, engagementId: eng(5), title: "T4 / employment income slips", required: true, status: "received", documentId: "d0c00001-0000-4000-8000-000000000001", position: 1 },
+    { id: item(3), orgId: SEED.org1, engagementId: eng(5), title: "Daycare receipts", required: true, status: "missing", position: 2 },
+    { id: item(4), orgId: SEED.org1, engagementId: eng(5), title: "Donation receipts", required: false, status: "waived", position: 3 },
+    // An — eng(3): complete (drives nothing; already in_review).
+    { id: item(5), orgId: SEED.org1, engagementId: eng(3), title: "Prior-year Notice of Assessment", required: true, status: "received", position: 0 },
+    { id: item(6), orgId: SEED.org1, engagementId: eng(3), title: "T4 / employment income slips", required: true, status: "waived", position: 1 },
+    { id: item(7), orgId: SEED.org1, engagementId: eng(3), title: "Business income & expense summary", required: true, status: "received", position: 2 },
+    // Pines & Birch — eng(7), T2.
+    { id: item(8), orgId: SEED.org1, engagementId: eng(7), title: "Year-end financial statements", required: true, status: "received", position: 0 },
+    { id: item(9), orgId: SEED.org1, engagementId: eng(7), title: "Trial balance / general ledger export", required: true, status: "received", position: 1 },
+    { id: item(10), orgId: SEED.org1, engagementId: eng(7), title: "GST/HST filings for the year", required: false, status: "missing", position: 2 },
+    // Org 2 — isolation.
+    { id: item(11), orgId: SEED.org2, engagementId: eng(9), title: "T4 / employment income slips", required: true, status: "missing", position: 0 },
+  ]);
+
   await db.insert(schema.auditLog).values({
     orgId: SEED.org1,
     actorType: "system",
@@ -336,7 +480,7 @@ async function main() {
 
   await pool.end();
 
-  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements.");
+  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements, 6 documents, 11 checklist items.");
   console.log("Dev logins (all password: %s):", SEED.password);
   for (const s of staff) console.log(`  ${s.role.padEnd(10)} ${s.email}  (${s.orgId === SEED.org1 ? "Lakeside CPA" : "Northern Tax"})`);
   console.log("First login will require TOTP enrollment (mandatory 2FA).");

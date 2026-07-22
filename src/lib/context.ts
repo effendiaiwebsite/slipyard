@@ -71,6 +71,35 @@ export async function requireStaff(): Promise<StaffContext> {
   // later concern (active-org cookie) — until then, first membership wins.
   const m = memberships[0];
 
+  return buildStaffContext(session, m);
+}
+
+/**
+ * Route-handler variant of requireStaff (M3 upload route): same gates, but
+ * failures come back as JSON-able errors instead of redirects — a fetch()
+ * caller can't follow a redirect to a login page.
+ */
+export async function staffApiContext(): Promise<
+  { ok: true; ctx: StaffContext } | { ok: false; error: string; status: number }
+> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) return { ok: false, error: "Not signed in.", status: 401 };
+  if (!session.user.twoFactorEnabled)
+    return { ok: false, error: "Two-factor enrollment required.", status: 403 };
+  const lastActivity = new Date(session.session.updatedAt).getTime();
+  if (Date.now() - lastActivity > IDLE_TIMEOUT_MS + 5 * 60 * 1000) {
+    return { ok: false, error: "Session timed out — sign in again.", status: 401 };
+  }
+  const memberships = await listMembershipsForUser(session.user.id);
+  if (memberships.length === 0)
+    return { ok: false, error: "No organization membership.", status: 403 };
+  return { ok: true, ctx: buildStaffContext(session, memberships[0]) };
+}
+
+function buildStaffContext(
+  session: NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>,
+  m: Awaited<ReturnType<typeof listMembershipsForUser>>[number]
+): StaffContext {
   return {
     user: { id: session.user.id, name: session.user.name, email: session.user.email },
     actor: { userId: session.user.id, orgId: m.org.id, role: m.membership.role },

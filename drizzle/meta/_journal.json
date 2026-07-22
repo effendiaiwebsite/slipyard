@@ -78,6 +78,20 @@
       "when": 1784697180725,
       "tag": "0010_m2_stage_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784704672739,
+      "tag": "0011_m3_vault_checklists",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784704708524,
+      "tag": "0012_m3_rls",
+      "breakpoints": true
     }
   ]
 }

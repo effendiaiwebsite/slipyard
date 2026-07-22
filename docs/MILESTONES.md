@@ -14,7 +14,7 @@
 - [x] **M2 — Client hub.** Clients grid + detail, households, tags, notes,
   contact log, engagements + transitions, workflow board, search, assignment.
   ✅ Firm runs its client list entirely in-app; board drag respects permissions.
-- [ ] **M3 — Vault & checklists.** S3 pipeline, quarantine/scan, documents,
+- [x] **M3 — Vault & checklists.** S3 pipeline, quarantine/scan, documents,
   checklist engine, intake queue, missing-docs dashboard, Returns page.
   ✅ Upload→scan→assign→auto-advance E2E green against dev bucket.
 - [ ] **M4 — Client portal.** Magic links + OTP, three-card home, jscanify

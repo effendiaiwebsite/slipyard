@@ -150,6 +150,40 @@ client_id FK, channel (enum contact_channel phone/email/sms/meeting/mail/
 other), summary, occurred_at, created_by. max(occurred_at) is "last contact"
 in the grid.
 
+## Vault & checklists (M3, RLS FORCEd — drizzle/0012_m3_rls.sql)
+
+### document
+| field | type | notes |
+|---|---|---|
+| client_id | uuid FK client (cascade) | documents always belong to a client |
+| engagement_id | uuid FK engagement nullable (set null) | null = intake queue; set when filed against a return |
+| filename | text | sanitized original name (display + S3 key tail) |
+| content_type, size_bytes | text, bigint | allowlisted types, 25 MB cap (src/lib/storage.ts) |
+| s3_key | text | CURRENT location: org/{orgId}/quarantine/{id}/… until clean, then org/{orgId}/vault/{id}/… |
+| status | enum document_status | pending_scan → clean / infected / scan_failed (retryable) |
+| scan_result | text | virus signature (infected) or error summary (scan_failed); null when clean |
+| scanned_at | timestamptz | |
+| source | enum document_source | staff_upload; portal_upload arrives with M4 |
+| uploaded_by | text FK staff_user nullable | null for portal uploads later |
+
+Lifecycle (ADR-0016): upload route → quarantine + pending_scan → ClamAV →
+clean (promoted to vault) / infected (stays quarantined, never
+downloadable) / scan_failed (retry via documents.manage). Downloads are
+5-min presigned GETs, clean docs only, audited as documents.view.
+
+### checklist_item
+| field | type | notes |
+|---|---|---|
+| engagement_id | uuid FK engagement (cascade) | |
+| title | text | from CHECKLIST_TEMPLATES (per engagement type) or custom |
+| required | bool | only required items gate auto-advance |
+| status | enum checklist_item_status | missing / received / waived |
+| document_id | uuid FK document nullable (set null) | the doc that satisfied it; null for manual receipt |
+| position | int | template order; custom items append |
+
+State changes trigger applyAutoAdvance (ADR-0017): category-keyed, forward
+only, never past awaiting_docs→in_progress boundaries.
+
 ## Enums
 subscription_status: trialing, active, past_due, canceled
 staff_role: owner, admin, accountant, clerk
@@ -163,8 +197,11 @@ preferred_channel: email, sms, phone, mail
 engagement_type: t1, t2, t3, other
 stage_category: not_started, awaiting_docs, in_progress, awaiting_signature, filed, complete
 contact_channel: phone, email, sms, meeting, mail, other
+document_status: pending_scan, clean, infected, scan_failed
+document_source: staff_upload, portal_upload
+checklist_item_status: missing, received, waived
 
 ## Planned (added at their milestone; spec §3)
-trusted_helper, checklist_item, document, signature_request,
-cra_authorization, message, portal_token, time_entry, invoice,
-ai_interaction, import_batch, import_mapping_template, staging tables.
+trusted_helper, signature_request, cra_authorization, message, portal_token,
+time_entry, invoice, ai_interaction, import_batch, import_mapping_template,
+staging tables.

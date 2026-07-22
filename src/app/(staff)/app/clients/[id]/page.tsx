@@ -16,6 +16,7 @@ import {
   PinToggle,
   TransitionSelect,
 } from "./detail-forms";
+import { ChecklistPanel, DocumentsCard } from "./vault-section";
 
 export const metadata = { title: "Client" };
 
@@ -54,10 +55,29 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
     !ctx.readOnly && can(ctx.actor, "clients.update", clientResource, ctx.orgSettings);
   const canCreateEng = !ctx.readOnly && can(ctx.actor, "engagements.create", clientResource);
 
-  const [memberships, stageRows] = await Promise.all([
+  const [memberships, stageRows, clientDocs, clientChecklistItems] = await Promise.all([
     ctx.scope.listMemberships(),
     ctx.scope.listStages(),
+    ctx.scope.listDocumentsByClient(c.id),
+    ctx.scope.listChecklistItemsForClient(c.id),
   ]);
+  const engagementLabel = new Map(
+    detail.engagements.map(({ engagement: e }) => [
+      e.id,
+      `${ENGAGEMENT_TYPE_LABELS[e.type]} ${e.taxYear}`,
+    ])
+  );
+  const docNameById = new Map(clientDocs.map(({ document: d }) => [d.id, d.filename]));
+  const canUploadDocs =
+    !ctx.readOnly && can(ctx.actor, "documents.intake_upload", clientResource, ctx.orgSettings);
+  const canManageDocs = (assignedTo: string | null) =>
+    !ctx.readOnly &&
+    can(
+      ctx.actor,
+      "documents.manage",
+      { ...clientResource, assignedTo: assignedTo ?? c.assignedAccountantId },
+      ctx.orgSettings
+    );
   const members = memberships
     .filter((m) => m.membership.status === "active" && m.membership.role !== "clerk")
     .map((m) => ({ id: m.user.id, name: m.user.name }));
@@ -152,11 +172,59 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                       <AssignSelect engagementId={e.id} members={members} current={e.assignedToId} />
                     )}
                   </div>
+                  <div className="w-full">
+                    <ChecklistPanel
+                      clientId={c.id}
+                      engagementId={e.id}
+                      canManage={canManageDocs(e.assignedToId)}
+                      items={clientChecklistItems
+                        .filter(({ item }) => item.engagementId === e.id)
+                        .map(({ item }) => ({
+                          id: item.id,
+                          title: item.title,
+                          required: item.required,
+                          status: item.status,
+                          documentName: item.documentId
+                            ? (docNameById.get(item.documentId) ?? null)
+                            : null,
+                        }))}
+                    />
+                  </div>
                 </div>
               ))}
               {canCreateEng && (
                 <NewEngagementForm clientId={c.id} members={members} defaultYear={currentYear - 1} />
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">Documents</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DocumentsCard
+                clientId={c.id}
+                canUpload={canUploadDocs}
+                canManage={canManageDocs(null)}
+                engagements={detail.engagements.map(({ engagement: e }) => ({
+                  id: e.id,
+                  label: engagementLabel.get(e.id) ?? "Engagement",
+                }))}
+                docs={clientDocs.map(({ document: d, uploaderName }) => ({
+                  id: d.id,
+                  filename: d.filename,
+                  status: d.status,
+                  sizeBytes: d.sizeBytes,
+                  createdAt: d.createdAt.toISOString(),
+                  uploaderName,
+                  engagementId: d.engagementId,
+                  engagementLabel: d.engagementId
+                    ? (engagementLabel.get(d.engagementId) ?? null)
+                    : null,
+                  scanResult: d.status === "infected" ? d.scanResult : null,
+                }))}
+              />
             </CardContent>
           </Card>
 

@@ -69,6 +69,52 @@ own fixtures (random UUIDs) and clean up — they don't depend on the seed.
   'in_use' until a destination is given, then moves engagements; transition
   rejects a foreign org's stage id; stage lists/gets are tenant-isolated.
 
+## Automated coverage (M3)
+- `tests/documents.test.ts` — checklist templates instantiate per engagement
+  type (idempotent; 'other' empty); auto-advance keyed on stage CATEGORY
+  only: not_started+missing→awaiting_docs, satisfied→first in_progress,
+  never moves in_progress-or-later, degrades to no-op when a custom pipeline
+  lacks the target category; scan pipeline (S3+clamd mocked): clean→vault
+  key promote, infected→flagged+stays quarantined, scanner outage→
+  scan_failed never clean; documents permission matrix (clerk intake-only,
+  accountant manage-assigned-only); document/checklist_item RLS (scope
+  isolation + zero rows for app role without GUC); filename sanitization
+  (path traversal, dot-files, specials).
+- `e2e/m3.spec.ts` — REAL dev bucket + REAL local clamd: new engagement
+  instantiates checklist and auto-advances to Awaiting docs; file upload
+  against a checklist item → scanned clean → vaulted → item Received;
+  remaining required item marked received → auto-advance to In preparation
+  (persists); infected/scan-failed fixtures: flagged badges, no download
+  affordance, Remove works, Rescan offered; clerk uploads to intake but has
+  no filing controls; owner files a queued doc against a return (leaves
+  queue); Returns page missing-docs rollup matches seed; org-2 owner sees
+  only org-2 returns.
+
+### M3 dev-machine caveat: host antivirus vs EICAR
+Norton on this dev machine intercepts EICAR uploads to localhost over HTTP
+(threat "WICAR Test - NOT A VIRUS"), resetting the connection before the app
+sees it — and then blacklists the upload URL for a while, breaking BENIGN
+uploads too (symptom: connection reset on exactly one path, nothing in the
+server log). Consequences:
+- The e2e suite does NOT push live EICAR through the browser. Real clamd
+  detection was verified directly over the clamd TCP protocol (INSTREAM →
+  `Eicar-Test-Signature FOUND`); verdict routing is covered in Vitest; the
+  browser-facing contract (flagged, no download, removable) is asserted via
+  the seeded infected fixture.
+- The upload endpoint is `/api/vault/upload` — renamed after Norton
+  blacklisted the original `/api/documents/upload`. If uploads ever start
+  failing with connection resets and an empty server log, suspect the host AV
+  first.
+
+## Manual checklist — M3 (verified 2026-07-22)
+- [x] ClamAV container healthy (`docker compose up -d clamav`); PING/PONG,
+  clean INSTREAM scan `OK`, EICAR INSTREAM → `Eicar-Test-Signature FOUND`.
+- [x] Seed uploads 6 fixture objects to s3://accountant-crm-dev (vault +
+  quarantine keys); presigned-GET download of a vaulted doc opens from the
+  client page.
+- [x] Full Vitest (69) + Playwright (14) suites green against dev bucket +
+  local clamd.
+
 ## Manual checklist — M1 (verified 2026-07-21)
 - [x] Real Stripe test keys verified: price listed via API; checkout session
   created + expired via smoke script (per-seat quantity, 14-day trial).

@@ -109,3 +109,31 @@ in-use stage requires choosing a destination for its engagements, engagement
 FK is ON DELETE RESTRICT as the backstop. Managed in Settings → Workflow
 stages, gated by org.update_settings. Supersedes the "show Joey the enum"
 review item from ADR-0013 — Joey now edits the template himself.
+
+## ADR-0016 (2026-07-22) — M3 upload pipeline: app-proxied multipart + synchronous scan
+The architecture sketch said "browser → presigned POST → pg-boss scan job",
+but the stack decision defers pg-boss to M5, and presigned browser POSTs
+need bucket CORS + orphaned-object lifecycle handling. At small-firm scale
+(25 MB cap) M3 instead proxies uploads through a route handler
+(/api/vault/upload): bytes → org/{orgId}/quarantine/ → ClamAV INSTREAM scan
+synchronously in the request → promote to vault/ (CopyObject+Delete) or
+flag. Scanner unavailable ⇒ status scan_failed (retryable via
+documents.manage) — NEVER treated as clean. Reads stay presigned GETs
+(5 min), so document bytes never stream through the app on the read path.
+The route enforces same-origin (Origin header) because cookie-authed
+multipart POSTs skip CORS preflight and route handlers lack the server
+actions' built-in origin check. Revisit at M4 (phone/pipeline volume) and
+M5 (move scanning to pg-boss). Endpoint deliberately NOT named
+/api/documents/upload — the dev machine's antivirus blacklisted that URL
+after EICAR tests (see TESTING.md).
+
+## ADR-0017 (2026-07-22) — Auto-advance is one-way and stops at in_progress
+Checklist automation (M3) only ever moves an engagement forward and only
+out of not_started/awaiting_docs categories: items-exist+required-missing
+moves not_started→awaiting_docs; all-required-satisfied moves
+not_started/awaiting_docs→first in_progress stage. It never touches
+engagements at in_progress or beyond (late-arriving docs must not yank a
+return out of review/filing) and never moves backwards. Per ADR-0015 it
+keys on stage.category only; if a custom pipeline lacks the target
+category, the rule silently no-ops rather than guessing a stage. Audited as
+actor_type=system, action `engagements.auto_advance`.

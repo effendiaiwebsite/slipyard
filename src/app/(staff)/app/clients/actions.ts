@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { applyAutoAdvance, instantiateChecklist } from "@/lib/checklists";
 import { requireStaff, type StaffContext } from "@/lib/context";
 import { encryptField, isValidSin } from "@/lib/crypto";
 import { authorize, PermissionError, ReadOnlyOrgError } from "@/lib/permissions";
@@ -411,7 +412,7 @@ export async function createEngagement(
   const stages = await ctx.scope.listStages();
   if (stages.length === 0) return { error: "No workflow stages configured. Add stages in Settings first." };
 
-  await ctx.scope.createEngagement({
+  const engagement = await ctx.scope.createEngagement({
     clientId: parsed.data.clientId,
     type: parsed.data.type,
     taxYear: parsed.data.taxYear,
@@ -419,6 +420,10 @@ export async function createEngagement(
     // Default to the client's accountant so the personal board picks it up.
     assignedToId: parsed.data.assignedToId ?? existing.assignedAccountantId,
   });
+  // M3: every new engagement gets its type's document checklist, and the
+  // auto-advance rules may immediately move it to an awaiting-docs stage.
+  await instantiateChecklist(ctx.scope, engagement.id, engagement.type);
+  await applyAutoAdvance(ctx.scope, engagement.id);
   revalidatePath(`/app/clients/${clientId}`);
   revalidatePath("/app/workflow");
   return { ok: true };
