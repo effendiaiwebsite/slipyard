@@ -4,48 +4,56 @@ import { Clock, GripVertical, Lock } from "lucide-react";
 import Link from "next/link";
 import { useOptimistic, useState, useTransition } from "react";
 import { Card } from "@/components/ui/card";
-import { STATUS_META } from "@/lib/clients";
-import { ENGAGEMENT_STATUSES, type EngagementStatus } from "@/db/schema";
+import { CATEGORY_META } from "@/lib/clients";
+import type { StageCategory } from "@/db/schema";
 import { transitionEngagement } from "../clients/actions";
+
+export type BoardStage = {
+  id: string;
+  key: string;
+  label: string;
+  category: StageCategory;
+};
 
 export type BoardCard = {
   id: string;
   clientId: string;
   clientName: string;
   label: string; // "T1 2025"
-  status: EngagementStatus;
+  stageId: string;
   assignedName: string | null;
   since: string | null; // ISO
   canTransition: boolean;
 };
 
 /**
- * Kanban with native HTML5 drag & drop. A drop is an optimistic move +
- * permission-checked transitionEngagement server action; a denial reverts
- * the card and surfaces the server's message.
+ * Kanban over the org's own stages (ADR-0015) with native HTML5 drag &
+ * drop. A drop is an optimistic move + permission-checked
+ * transitionEngagement server action; a denial reverts the card and
+ * surfaces the server's message.
  */
-export function Board({ cards }: { cards: BoardCard[] }) {
+export function Board({ stages, cards }: { stages: BoardStage[]; cards: BoardCard[] }) {
   const [isPending, startTransition] = useTransition();
   const [optimistic, applyMove] = useOptimistic(
     cards,
-    (state, move: { id: string; status: EngagementStatus }) =>
-      state.map((c) => (c.id === move.id ? { ...c, status: move.status } : c))
+    (state, move: { id: string; stageId: string }) =>
+      state.map((c) => (c.id === move.id ? { ...c, stageId: move.stageId } : c))
   );
   const [dragId, setDragId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<EngagementStatus | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function handleDrop(status: EngagementStatus) {
+  function handleDrop(stageId: string) {
     const id = dragId;
     setDragId(null);
     setDropTarget(null);
     if (!id) return;
     const card = optimistic.find((c) => c.id === id);
-    if (!card || card.status === status) return;
+    if (!card || card.stageId === stageId) return;
     setError(null);
     startTransition(async () => {
-      applyMove({ id, status });
-      const res = await transitionEngagement(id, status);
+      applyMove({ id, stageId });
+      const res = await transitionEngagement(id, stageId);
       // revalidatePath refreshes the RSC data; on failure the refresh itself
       // snaps the card back — we just surface why.
       if (res.error) setError(res.error);
@@ -59,23 +67,26 @@ export function Board({ cards }: { cards: BoardCard[] }) {
           {error}
         </div>
       )}
-      <div className="flex-1 grid grid-cols-7 gap-3 overflow-x-auto min-w-0">
-        {ENGAGEMENT_STATUSES.map((status) => {
-          const meta = STATUS_META[status];
-          const colCards = optimistic.filter((c) => c.status === status);
-          const isTarget = dropTarget === status && dragId !== null;
+      <div
+        className="flex-1 grid gap-3 overflow-x-auto min-w-0"
+        style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(180px, 1fr))` }}
+      >
+        {stages.map((stage) => {
+          const meta = CATEGORY_META[stage.category];
+          const colCards = optimistic.filter((c) => c.stageId === stage.id);
+          const isTarget = dropTarget === stage.id && dragId !== null;
           return (
             <div
-              key={status}
-              data-status={status}
+              key={stage.id}
+              data-status={stage.key}
               onDragOver={(e) => {
                 e.preventDefault();
-                setDropTarget(status);
+                setDropTarget(stage.id);
               }}
-              onDragLeave={() => setDropTarget((t) => (t === status ? null : t))}
+              onDragLeave={() => setDropTarget((t) => (t === stage.id ? null : t))}
               onDrop={(e) => {
                 e.preventDefault();
-                handleDrop(status);
+                handleDrop(stage.id);
               }}
               className={`flex flex-col rounded-lg border-t-2 bg-slate-50/60 min-w-[180px] ${
                 meta.board.split(" ")[0]
@@ -87,7 +98,7 @@ export function Board({ cards }: { cards: BoardCard[] }) {
                   .slice(1)
                   .join(" ")}`}
               >
-                <span className="text-xs font-semibold tracking-wide">{meta.label}</span>
+                <span className="text-xs font-semibold tracking-wide">{stage.label}</span>
                 <span className="text-xs font-bold">{colCards.length}</span>
               </div>
               <div className="p-2 space-y-2 overflow-y-auto scrollbar-thin flex-1">

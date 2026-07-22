@@ -92,3 +92,20 @@ machine. Revisit if M6 signing needs a hard filed-immutability gate.
 better-auth rateLimit stays 30 req/min/IP in production, 300 otherwise: e2e
 drives ~8 logins + TOTP enrollments from one IP (localhost) and tripped the
 in-memory limiter mid-suite. Keyed on NODE_ENV, so no prod behavior change.
+Addendum (same day): better-auth's stricter BUILT-IN per-path rules
+(/sign-in/email, /two-factor/*) also trip under e2e; dev/test overrides them
+to 30/10s via customRules. Production keeps all built-in path rules.
+
+## ADR-0015 (2026-07-21) — Workflow stages are per-org rows, anchored by fixed categories
+Customer request: firms must be able to rename/add/remove/reorder pipeline
+stages. engagement_status enum replaced by an engagement_stage table (org_id,
+immutable key slug, label, category, position); every org starts from the
+7-stage default template (org bootstrap + seed + 0008 backfill). The category
+enum (not_started/awaiting_docs/in_progress/awaiting_signature/filed/complete)
+is FIXED and is the only thing automations may reference — M3 checklists, M5
+reminders, M6 signing hook categories, never labels or keys. Guardrails:
+stage keys immutable (renames touch labels), min 2 stages, deleting an
+in-use stage requires choosing a destination for its engagements, engagement
+FK is ON DELETE RESTRICT as the backstop. Managed in Settings → Workflow
+stages, gated by org.update_settings. Supersedes the "show Joey the enum"
+review item from ADR-0013 — Joey now edits the template himself.

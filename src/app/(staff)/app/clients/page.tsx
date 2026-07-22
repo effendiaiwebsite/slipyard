@@ -26,9 +26,10 @@ export default async function ClientsPage() {
     type: r.client.type,
     status: r.client.status,
     sinMasked: r.client.sinLast3 ? `*** *** ${r.client.sinLast3}` : null,
-    stage: r.latestEngagement?.status ?? null,
+    stageLabel: r.latestEngagement?.stage.label ?? null,
+    stageCategory: r.latestEngagement?.stage.category ?? null,
     engagementLabel: r.latestEngagement
-      ? `${r.latestEngagement.type.toUpperCase()} ${r.latestEngagement.taxYear}`
+      ? `${r.latestEngagement.engagement.type.toUpperCase()} ${r.latestEngagement.engagement.taxYear}`
       : null,
     owner: r.assignedName,
     household: r.householdName,

@@ -19,11 +19,21 @@ let scopeA: OrgScope;
 let scopeB: OrgScope;
 let clientId: string;
 let engagementId: string;
+let stageIds: Record<string, string>; // org A: template key → id
 
 beforeAll(async () => {
   f = await createFixture();
   scopeA = new OrgScope(f.orgA, f.userA);
   scopeB = new OrgScope(f.orgB, f.userB);
+
+  // Fixture orgs are created raw (no bootstrap), so give org A the default
+  // stage template through the scoped layer.
+  stageIds = {};
+  const { DEFAULT_ENGAGEMENT_STAGES } = await import("@/db/schema");
+  for (const s of DEFAULT_ENGAGEMENT_STAGES) {
+    const row = await scopeA.createStage({ key: s.key, label: s.label, category: s.category });
+    stageIds[s.key] = row.id;
+  }
 
   const created = await scopeA.createClient({
     displayName: "Test Client Alpha",
@@ -41,6 +51,7 @@ beforeAll(async () => {
     clientId,
     type: "t1",
     taxYear: 2025,
+    stageId: stageIds.not_started,
     assignedToId: f.userA,
   });
   engagementId = eng.id;
@@ -92,7 +103,8 @@ describe("client CRUD via OrgScope", () => {
     const rows = await scopeA.listClientsWithMeta();
     const row = rows.find((r) => r.client.id === clientId);
     expect(row).toBeTruthy();
-    expect(row!.latestEngagement?.id).toBe(engagementId);
+    expect(row!.latestEngagement?.engagement.id).toBe(engagementId);
+    expect(row!.latestEngagement?.stage.key).toBe("not_started");
     expect(row!.lastContactAt?.toISOString()).toBe("2026-07-01T12:00:00.000Z");
   });
 
@@ -105,20 +117,71 @@ describe("client CRUD via OrgScope", () => {
 });
 
 describe("engagement transitions", () => {
-  it("sets status and stamps statusTimestamps", async () => {
+  it("moves to the stage and stamps statusTimestamps by stage key", async () => {
     const before = Date.now();
-    const updated = await scopeA.transitionEngagement(engagementId, "awaiting_docs");
-    expect(updated?.status).toBe("awaiting_docs");
+    const updated = await scopeA.transitionEngagement(engagementId, stageIds.awaiting_docs);
+    expect(updated?.stageId).toBe(stageIds.awaiting_docs);
     const stamp = updated?.statusTimestamps["awaiting_docs"];
     expect(stamp).toBeTruthy();
     expect(Math.abs(new Date(stamp!).getTime() - before)).toBeLessThan(10_000);
   });
 
-  it("counts by status for dashboards", async () => {
-    const counts = await scopeA.countEngagementsByStatus();
-    expect(counts.get("awaiting_docs")).toBe(1);
-    const forOther = await scopeA.countEngagementsByStatus(f.userB);
+  it("rejects a stage from another org", async () => {
+    const foreign = await scopeB.createStage({
+      key: "b-stage",
+      label: "B stage",
+      category: "in_progress",
+    });
+    // Org A's transition can't resolve org B's stage — scoped lookup misses.
+    expect(await scopeA.transitionEngagement(engagementId, foreign.id)).toBeNull();
+  });
+
+  it("counts by stage for dashboards", async () => {
+    const counts = await scopeA.countEngagementsByStage();
+    expect(counts.get(stageIds.awaiting_docs)).toBe(1);
+    const forOther = await scopeA.countEngagementsByStage(f.userB);
     expect(forOther.size).toBe(0);
+  });
+});
+
+describe("stage management (ADR-0015)", () => {
+  it("renames a stage without touching its key", async () => {
+    const updated = await scopeA.updateStage(stageIds.in_review, { label: "Partner review" });
+    expect(updated?.label).toBe("Partner review");
+    expect(updated?.key).toBe("in_review");
+  });
+
+  it("appends new stages at the end and reorders", async () => {
+    const added = await scopeA.createStage({
+      key: "efile-queue",
+      label: "EFILE queue",
+      category: "in_progress",
+    });
+    let stages = await scopeA.listStages();
+    expect(stages[stages.length - 1].id).toBe(added.id);
+
+    const order = stages.map((s) => s.id);
+    [order[order.length - 1], order[order.length - 2]] = [
+      order[order.length - 2],
+      order[order.length - 1],
+    ];
+    await scopeA.setStagePositions(order);
+    stages = await scopeA.listStages();
+    expect(stages[stages.length - 2].id).toBe(added.id);
+  });
+
+  it("delete of an in-use stage requires reassignment, then moves engagements", async () => {
+    expect(await scopeA.deleteStage(stageIds.awaiting_docs)).toBe("in_use");
+    expect(await scopeA.deleteStage(stageIds.awaiting_docs, stageIds.in_preparation)).toBe("ok");
+    const eng = await scopeA.getEngagement(engagementId);
+    expect(eng?.stageId).toBe(stageIds.in_preparation);
+  });
+
+  it("stages are tenant-isolated", async () => {
+    const bStages = await scopeB.listStages();
+    expect(bStages.every((s) => s.orgId === f.orgB)).toBe(true);
+    expect(bStages.some((s) => s.key === "in_review")).toBe(false);
+    expect(await scopeB.getStage(stageIds.in_preparation)).toBeNull();
   });
 });
 

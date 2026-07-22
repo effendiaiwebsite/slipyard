@@ -61,7 +61,13 @@ own fixtures (random UUIDs) and clean up — they don't depend on the seed.
   add note → log contact → stage transition persists across reload; board:
   own card draggable, colleague's locked, HTML5 drag lands + persists;
   clerk: no create/edit/transition affordances anywhere, board fully locked;
-  tenant isolation: org-2 owner sees only org-2 clients/engagements.
+  tenant isolation: org-2 owner sees only org-2 clients/engagements;
+  custom stages (ADR-0015): owner renames a stage + adds one in settings,
+  board columns follow immediately.
+- Custom stages (in `tests/clients.test.ts`): rename keeps the immutable
+  key; new stages append then reorder; deleting an in-use stage returns
+  'in_use' until a destination is given, then moves engagements; transition
+  rejects a foreign org's stage id; stage lists/gets are tenant-isolated.
 
 ## Manual checklist — M1 (verified 2026-07-21)
 - [x] Real Stripe test keys verified: price listed via API; checkout session

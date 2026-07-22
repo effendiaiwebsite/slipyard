@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { STATUS_META } from "@/lib/clients";
+import { CATEGORY_META } from "@/lib/clients";
 import { requireStaff } from "@/lib/context";
-import { ENGAGEMENT_STATUSES } from "@/db/schema";
 
 /**
  * Dashboard — firm-wide variant for owner/admin, personal variant for
@@ -16,15 +15,23 @@ export default async function DashboardPage() {
 
   // Personal variant counts only what's assigned to the viewer.
   const mineOnly = firmWide ? undefined : ctx.user.id;
-  const [byStatus, clients, members] = await Promise.all([
-    ctx.scope.countEngagementsByStatus(mineOnly),
+  const [stages, byStage, clients, members] = await Promise.all([
+    ctx.scope.listStages(),
+    ctx.scope.countEngagementsByStage(mineOnly),
     ctx.scope.listClientsWithMeta(mineOnly ? { assignedToId: mineOnly } : undefined),
     firmWide ? ctx.scope.listMemberships() : Promise.resolve(null),
   ]);
 
-  const total = [...byStatus.values()].reduce((a, b) => a + b, 0);
+  // Category totals survive any stage customization (ADR-0015).
+  const byCategory = new Map<string, number>();
+  let total = 0;
+  for (const s of stages) {
+    const n = byStage.get(s.id) ?? 0;
+    total += n;
+    byCategory.set(s.category, (byCategory.get(s.category) ?? 0) + n);
+  }
   const open =
-    total - (byStatus.get("filed") ?? 0) - (byStatus.get("noa_received") ?? 0);
+    total - (byCategory.get("filed") ?? 0) - (byCategory.get("complete") ?? 0);
   const activeClients = clients.filter((c) => c.client.status === "active").length;
 
   const stats = [
@@ -36,12 +43,12 @@ export default async function DashboardPage() {
     { label: firmWide ? "Open engagements" : "My open engagements", value: open, href: "/app/workflow" },
     {
       label: "Awaiting documents",
-      value: byStatus.get("awaiting_docs") ?? 0,
+      value: byCategory.get("awaiting_docs") ?? 0,
       href: "/app/workflow",
     },
     {
       label: "Awaiting signature",
-      value: byStatus.get("awaiting_signature") ?? 0,
+      value: byCategory.get("awaiting_signature") ?? 0,
       href: "/app/workflow",
     },
   ];
@@ -97,14 +104,14 @@ export default async function DashboardPage() {
             </p>
           ) : (
             <div className="flex items-center gap-2 flex-wrap">
-              {ENGAGEMENT_STATUSES.map((s) => (
+              {stages.map((s) => (
                 <Link
-                  key={s}
+                  key={s.id}
                   href="/app/workflow"
                   className="flex items-center gap-2 px-3 py-1.5 rounded-md ring-1 ring-slate-200 hover:bg-slate-50 text-sm"
                 >
-                  <Badge variant={STATUS_META[s].badge}>{STATUS_META[s].label}</Badge>
-                  <span className="font-semibold tabular-nums">{byStatus.get(s) ?? 0}</span>
+                  <Badge variant={CATEGORY_META[s.category].badge}>{s.label}</Badge>
+                  <span className="font-semibold tabular-nums">{byStage.get(s.id) ?? 0}</span>
                 </Link>
               ))}
             </div>

@@ -14,8 +14,8 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
-import { STATUS_META, TYPE_LABELS } from "@/lib/clients";
-import type { EngagementStatus } from "@/db/schema";
+import { CATEGORY_META, TYPE_LABELS } from "@/lib/clients";
+import type { StageCategory } from "@/db/schema";
 
 export type ClientRow = {
   id: string;
@@ -23,7 +23,8 @@ export type ClientRow = {
   type: "individual" | "corporation" | "trust";
   status: "active" | "archived";
   sinMasked: string | null;
-  stage: EngagementStatus | null;
+  stageLabel: string | null;
+  stageCategory: StageCategory | null;
   engagementLabel: string | null;
   owner: string | null;
   household: string | null;
@@ -93,12 +94,13 @@ export function ClientsTable({ data }: { data: ClientRow[] }) {
           <span className="font-mono text-xs text-slate-600">{info.getValue() ?? "—"}</span>
         ),
       }),
-      col.accessor("stage", {
+      col.accessor("stageLabel", {
         header: "Stage",
         cell: (info) => {
-          const s = info.getValue();
-          if (!s) return <span className="text-slate-300 text-xs">—</span>;
-          return <Badge variant={STATUS_META[s].badge}>{STATUS_META[s].label}</Badge>;
+          const label = info.getValue();
+          const category = info.row.original.stageCategory;
+          if (!label || !category) return <span className="text-slate-300 text-xs">—</span>;
+          return <Badge variant={CATEGORY_META[category].badge}>{label}</Badge>;
         },
       }),
       col.accessor("owner", {

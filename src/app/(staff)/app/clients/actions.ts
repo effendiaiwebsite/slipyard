@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { ENGAGEMENT_STATUSES } from "@/db/schema";
 import { requireStaff, type StaffContext } from "@/lib/context";
 import { encryptField, isValidSin } from "@/lib/crypto";
 import { authorize, PermissionError, ReadOnlyOrgError } from "@/lib/permissions";
@@ -408,10 +407,15 @@ export async function createEngagement(
   const assigneeProblem = await checkAssignee(ctx, parsed.data.assignedToId);
   if (assigneeProblem) return { error: assigneeProblem };
 
+  // New engagements enter the org's first stage (whatever the firm calls it).
+  const stages = await ctx.scope.listStages();
+  if (stages.length === 0) return { error: "No workflow stages configured. Add stages in Settings first." };
+
   await ctx.scope.createEngagement({
     clientId: parsed.data.clientId,
     type: parsed.data.type,
     taxYear: parsed.data.taxYear,
+    stageId: stages[0].id,
     // Default to the client's accountant so the personal board picks it up.
     assignedToId: parsed.data.assignedToId ?? existing.assignedAccountantId,
   });
@@ -422,19 +426,23 @@ export async function createEngagement(
 
 const transitionSchema = z.object({
   engagementId: z.string().uuid(),
-  status: z.enum(ENGAGEMENT_STATUSES),
+  stageId: z.string().uuid(),
 });
 
 export async function transitionEngagement(
   engagementId: string,
-  status: string
+  stageId: string
 ): Promise<ActionResult> {
   const ctx = await requireStaff();
-  const parsed = transitionSchema.safeParse({ engagementId, status });
+  const parsed = transitionSchema.safeParse({ engagementId, stageId });
   if (!parsed.success) return { error: "Invalid transition" };
 
   const engagement = await ctx.scope.getEngagement(parsed.data.engagementId);
   if (!engagement) return { error: "Engagement not found" };
+  // Stage must belong to this org — getStage is org-scoped, so a foreign id
+  // simply doesn't resolve.
+  const stage = await ctx.scope.getStage(parsed.data.stageId);
+  if (!stage) return { error: "Stage not found" };
 
   const denied = await tryAuthorize(
     ctx.scope,
@@ -448,13 +456,13 @@ export async function transitionEngagement(
     },
     {
       readOnlyOrg: ctx.readOnly,
-      details: { from: engagement.status, to: parsed.data.status },
+      details: { fromStageId: engagement.stageId, toStage: stage.key },
     }
   );
   if (denied) return { error: denied };
 
-  if (engagement.status !== parsed.data.status) {
-    await ctx.scope.transitionEngagement(parsed.data.engagementId, parsed.data.status);
+  if (engagement.stageId !== parsed.data.stageId) {
+    await ctx.scope.transitionEngagement(parsed.data.engagementId, parsed.data.stageId);
   }
   revalidatePath("/app/workflow");
   revalidatePath(`/app/clients/${engagement.clientId}`);

@@ -8,6 +8,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { staffUser } from "./auth";
@@ -83,31 +84,70 @@ export const household = pgTable(
 export const engagementType = pgEnum("engagement_type", ["t1", "t2", "t3", "other"]);
 
 /**
- * The workflow pipeline (ADR-0013). Any→any transitions are allowed
- * (small-firm reality: work moves backwards too); every transition is
- * permission-checked, timestamped in status_timestamps, and audited.
+ * Workflow pipeline (ADR-0013, per-org customizable since ADR-0015).
+ * Firms rename/add/remove/reorder STAGES; every stage carries a fixed
+ * CATEGORY that automations (M3 checklists, M5 reminders, M6 signing)
+ * hook onto — so customization never breaks downstream behavior.
  */
-export const engagementStatus = pgEnum("engagement_status", [
+export const stageCategory = pgEnum("stage_category", [
   "not_started",
   "awaiting_docs",
-  "in_preparation",
-  "in_review",
+  "in_progress",
   "awaiting_signature",
   "filed",
-  "noa_received",
+  "complete",
 ]);
 
-export const ENGAGEMENT_STATUSES = [
+export const STAGE_CATEGORIES = [
   "not_started",
   "awaiting_docs",
-  "in_preparation",
-  "in_review",
+  "in_progress",
   "awaiting_signature",
   "filed",
-  "noa_received",
+  "complete",
 ] as const;
 
-export type EngagementStatus = (typeof ENGAGEMENT_STATUSES)[number];
+export type StageCategory = (typeof STAGE_CATEGORIES)[number];
+
+/**
+ * The template every new org starts from (org bootstrap, seed, and the
+ * 0008 backfill all use this). Keys are immutable slugs — renames change
+ * the label only, so status_timestamps history stays readable.
+ */
+export const DEFAULT_ENGAGEMENT_STAGES: ReadonlyArray<{
+  key: string;
+  label: string;
+  category: StageCategory;
+  position: number;
+}> = [
+  { key: "not_started", label: "Not started", category: "not_started", position: 0 },
+  { key: "awaiting_docs", label: "Awaiting docs", category: "awaiting_docs", position: 1 },
+  { key: "in_preparation", label: "In preparation", category: "in_progress", position: 2 },
+  { key: "in_review", label: "In review", category: "in_progress", position: 3 },
+  { key: "awaiting_signature", label: "Awaiting signature", category: "awaiting_signature", position: 4 },
+  { key: "filed", label: "Filed", category: "filed", position: 5 },
+  { key: "noa_received", label: "NOA received", category: "complete", position: 6 },
+];
+
+export const engagementStage = pgTable(
+  "engagement_stage",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => org.id, { onDelete: "cascade" }),
+    // Immutable slug (from the label at creation); rename touches label only.
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    category: stageCategory("category").notNull(),
+    position: integer("position").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("engagement_stage_org_key_uq").on(t.orgId, t.key),
+    index("engagement_stage_org_position_idx").on(t.orgId, t.position),
+  ]
+);
 
 export const engagement = pgTable(
   "engagement",
@@ -121,8 +161,12 @@ export const engagement = pgTable(
       .references(() => client.id, { onDelete: "cascade" }),
     type: engagementType("type").notNull().default("t1"),
     taxYear: integer("tax_year").notNull(),
-    status: engagementStatus("status").notNull().default("not_started"),
-    // status → ISO timestamp of the moment it was (last) entered.
+    // Any→any transitions (ADR-0013); deletion of an in-use stage is
+    // blocked (restrict) — the UI reassigns engagements first.
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => engagementStage.id, { onDelete: "restrict" }),
+    // stage KEY → ISO timestamp of the moment it was (last) entered.
     statusTimestamps: jsonb("status_timestamps").$type<Record<string, string>>().notNull().default({}),
     // Defaults to the client's assigned accountant at creation; overridable.
     assignedToId: text("assigned_to_id").references(() => staffUser.id),
@@ -131,7 +175,7 @@ export const engagement = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    index("engagement_org_status_idx").on(t.orgId, t.status),
+    index("engagement_org_stage_idx").on(t.orgId, t.stageId),
     index("engagement_org_client_idx").on(t.orgId, t.clientId),
     index("engagement_org_assigned_idx").on(t.orgId, t.assignedToId),
   ]

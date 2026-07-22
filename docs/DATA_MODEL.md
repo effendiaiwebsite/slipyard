@@ -120,10 +120,23 @@ data; touched only by the webhook route. First-insert-wins gates processing.
 org_id, name, created_at. Family grouping for display + (M4) trusted-helper
 scoping. Members = clients with household_id.
 
+### engagement_stage (ADR-0015)
+Per-org workflow pipeline — firms rename/add/remove/reorder their stages.
+| field | type | notes |
+|---|---|---|
+| key | text | immutable slug, unique per org; renames change label only |
+| label | text | what the firm calls it (board column header) |
+| category | enum stage_category | FIXED semantic anchor — automations hook here, never labels |
+| position | int | board order |
+
+New orgs get the 7-stage default template (DEFAULT_ENGAGEMENT_STAGES) at
+bootstrap. Min 2 stages; deleting an in-use stage reassigns its engagements
+first (FK below is RESTRICT as backstop).
+
 ### engagement
 client_id FK, type (enum engagement_type t1/t2/t3/other), tax_year int,
-status (enum engagement_status — the workflow pipeline, ADR-0013),
-status_timestamps jsonb (status → ISO instant it was last entered),
+stage_id FK engagement_stage (RESTRICT — see above),
+status_timestamps jsonb (stage KEY → ISO instant it was last entered),
 assigned_to_id FK staff_user (defaults to the client's accountant at
 creation), created_by. Transitions are any→any (ADR-0013), permission-checked
 (`engagements.transition`, accountants only on assigned), audited.
@@ -148,7 +161,7 @@ client_type: individual, corporation, trust
 client_status: active, archived
 preferred_channel: email, sms, phone, mail
 engagement_type: t1, t2, t3, other
-engagement_status: not_started, awaiting_docs, in_preparation, in_review, awaiting_signature, filed, noa_received
+stage_category: not_started, awaiting_docs, in_progress, awaiting_signature, filed, complete
 contact_channel: phone, email, sms, meeting, mail, other
 
 ## Planned (added at their milestone; spec §3)

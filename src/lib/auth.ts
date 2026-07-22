@@ -52,8 +52,17 @@ export const auth = betterAuth({
     enabled: true,
     window: 60,
     // Dev/e2e drive many logins+TOTP enrollments from one IP (localhost);
-    // production keeps the tight per-IP budget.
+    // production keeps the tight per-IP budget AND better-auth's stricter
+    // built-in per-path rules on sign-in/two-factor endpoints.
     max: env.NODE_ENV === "production" ? 30 : 300,
+    customRules:
+      env.NODE_ENV === "production"
+        ? undefined
+        : {
+            "/sign-in/email": { window: 10, max: 30 },
+            "/two-factor/enable": { window: 10, max: 30 },
+            "/two-factor/verify-totp": { window: 10, max: 30 },
+          },
   },
   plugins: [
     twoFactor({

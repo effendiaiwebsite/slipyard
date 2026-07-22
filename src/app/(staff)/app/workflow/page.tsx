@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ENGAGEMENT_TYPE_LABELS, viewAssignedOnlyFilter } from "@/lib/clients";
 import { requireStaff } from "@/lib/context";
 import { can } from "@/lib/permissions";
-import { Board, type BoardCard } from "./board";
+import { Board, type BoardCard, type BoardStage } from "./board";
 
 export const metadata = { title: "Workflow board" };
 
@@ -18,18 +18,28 @@ export default async function WorkflowPage({
   // between the whole firm and their own cards.
   const forced = viewAssignedOnlyFilter(ctx);
   const mineOnly = forced !== undefined || owner === "me";
-  const rows = await ctx.scope.listEngagementsWithMeta({
-    assignedToId: forced ?? (mineOnly ? ctx.user.id : undefined),
-  });
+  const [stageRows, rows] = await Promise.all([
+    ctx.scope.listStages(),
+    ctx.scope.listEngagementsWithMeta({
+      assignedToId: forced ?? (mineOnly ? ctx.user.id : undefined),
+    }),
+  ]);
+
+  const stages: BoardStage[] = stageRows.map((s) => ({
+    id: s.id,
+    key: s.key,
+    label: s.label,
+    category: s.category,
+  }));
 
   const cards: BoardCard[] = rows.map((r) => ({
     id: r.engagement.id,
     clientId: r.engagement.clientId,
     clientName: r.clientName,
     label: `${ENGAGEMENT_TYPE_LABELS[r.engagement.type]} ${r.engagement.taxYear}`,
-    status: r.engagement.status,
+    stageId: r.engagement.stageId,
     assignedName: r.assignedName,
-    since: r.engagement.statusTimestamps[r.engagement.status] ?? null,
+    since: r.engagement.statusTimestamps[r.stage.key] ?? null,
     canTransition:
       !ctx.readOnly &&
       can(ctx.actor, "engagements.transition", {
@@ -64,7 +74,7 @@ export default async function WorkflowPage({
           </div>
         )}
       </div>
-      <Board cards={cards} />
+      <Board stages={stages} cards={cards} />
     </div>
   );
 }

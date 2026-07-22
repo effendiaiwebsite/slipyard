@@ -34,6 +34,16 @@ export default async function SettingsPage() {
             </CardHeader>
           </Card>
         </Link>
+        {canEdit && (
+          <Link href="/app/settings/stages" className="group">
+            <Card className="transition group-hover:border-slate-300">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">Workflow stages →</CardTitle>
+                <CardDescription>Rename, reorder, add or remove board columns.</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
       </div>
 
       <Card>

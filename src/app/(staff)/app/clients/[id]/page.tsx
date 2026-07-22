@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CHANNEL_LABELS, ENGAGEMENT_TYPE_LABELS, STATUS_META, TYPE_LABELS } from "@/lib/clients";
+import { CATEGORY_META, CHANNEL_LABELS, ENGAGEMENT_TYPE_LABELS, TYPE_LABELS } from "@/lib/clients";
 import { requireStaff } from "@/lib/context";
 import { authorize, can, PermissionError } from "@/lib/permissions";
 import {
@@ -54,10 +54,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
     !ctx.readOnly && can(ctx.actor, "clients.update", clientResource, ctx.orgSettings);
   const canCreateEng = !ctx.readOnly && can(ctx.actor, "engagements.create", clientResource);
 
-  const memberships = await ctx.scope.listMemberships();
+  const [memberships, stageRows] = await Promise.all([
+    ctx.scope.listMemberships(),
+    ctx.scope.listStages(),
+  ]);
   const members = memberships
     .filter((m) => m.membership.status === "active" && m.membership.role !== "clerk")
     .map((m) => ({ id: m.user.id, name: m.user.name }));
+  const stageOptions = stageRows.map((s) => ({ id: s.id, name: s.label }));
 
   const pinnedNotes = detail.notes.filter((n) => n.note.pinned);
   const currentYear = new Date().getFullYear();
@@ -116,7 +120,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               {detail.engagements.length === 0 && (
                 <p className="text-sm text-slate-400">No engagements yet.</p>
               )}
-              {detail.engagements.map(({ engagement: e, assignedName }) => (
+              {detail.engagements.map(({ engagement: e, assignedName, stage }) => (
                 <div
                   key={e.id}
                   className="flex items-center justify-between gap-3 flex-wrap border-b border-[var(--color-border)] last:border-0 pb-3 last:pb-0"
@@ -125,10 +129,10 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                     <span className="font-mono text-xs text-slate-600">
                       {ENGAGEMENT_TYPE_LABELS[e.type]} {e.taxYear}
                     </span>
-                    <Badge variant={STATUS_META[e.status].badge}>{STATUS_META[e.status].label}</Badge>
-                    {e.statusTimestamps[e.status] && (
+                    <Badge variant={CATEGORY_META[stage.category].badge}>{stage.label}</Badge>
+                    {e.statusTimestamps[stage.key] && (
                       <span className="text-xs text-slate-400">
-                        since {fmt(new Date(e.statusTimestamps[e.status]))}
+                        since {fmt(new Date(e.statusTimestamps[stage.key]))}
                       </span>
                     )}
                   </div>
@@ -140,7 +144,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                       id: e.id,
                       assignedTo: e.assignedToId,
                     }) ? (
-                      <TransitionSelect engagementId={e.id} status={e.status} />
+                      <TransitionSelect engagementId={e.id} stageId={e.stageId} stages={stageOptions} />
                     ) : (
                       <span className="text-xs text-slate-500">{assignedName ?? "Unassigned"}</span>
                     )}

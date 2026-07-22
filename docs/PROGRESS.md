@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-21 (M2 complete)_
+_Last updated: 2026-07-21 (M2 complete + customizable workflow stages)_
 
 ## DONE
 - **M0 — Foundation** (commit `M0: ...`): scaffold, RLS + OrgScope, better-auth
@@ -38,8 +38,17 @@ _Last updated: 2026-07-21 (M2 complete)_
     (e2e/.totp-secrets.json, cleared each run); auth rate limit 300/min
     outside production (ADR-0014).
 
+- **Post-M2: customizable workflow stages (ADR-0015, customer request)**:
+  engagement_status enum → per-org engagement_stage rows (immutable key,
+  label, fixed category, position). Default 7-stage template at org
+  bootstrap/seed/backfill. Settings → Workflow stages (owner/admin): rename,
+  reorder, add, delete-with-reassign (min 2 stages). Board columns, detail
+  transitions, grid badges, dashboard counts all follow org stages; automation
+  hooks (M3+) must key on stage.category only. 54 Vitest + 10 Playwright.
+
 ## IN PROGRESS
-- Nothing — stopped at the M2 boundary.
+- Nothing — stopped at the M2 boundary (plus the stage-customization
+  follow-up above).
 
 ## KNOWN BUGS / LIMITATIONS
 - Google-only accounts still can't enroll TOTP (twoFactor.enable needs a
@@ -56,8 +65,8 @@ _Last updated: 2026-07-21 (M2 complete)_
 
 ## NEEDS SATINDER'S / JOEY'S REVIEW
 - ADR-0004 accountant_scope_mode default (carried over from M0).
-- ADR-0013 engagement status names (board columns) — rename is cheap now,
-  annoying after M3 checklists hook onto statuses.
+- ~~ADR-0013 stage names~~ RESOLVED by ADR-0015: stages are per-org editable
+  (Settings → Workflow stages); Joey tunes his own template.
 
 ## NEXT 3 CONCRETE STEPS (M3 — Vault & checklists)
 1. S3 pipeline (ca-central-1 + KMS, org/{orgId}/quarantine|vault keys),

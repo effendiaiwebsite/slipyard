@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { encryptField } from "../src/lib/crypto";
 import * as schema from "../src/db/schema";
+import { DEFAULT_ENGAGEMENT_STAGES } from "../src/db/schema";
 import { adminUrl, APP_DB_NAME } from "./db-lib";
 
 /**
@@ -61,8 +62,8 @@ async function main() {
 
   // Wipe in FK order. TRUNCATE ... CASCADE keeps this list forgiving.
   await pool.query(
-    `truncate table contact_log, client_note, engagement, client, household,
-     audit_log, invitation, org_membership, auth_two_factor,
+    `truncate table contact_log, client_note, engagement, engagement_stage,
+     client, household, audit_log, invitation, org_membership, auth_two_factor,
      auth_verification, auth_account, auth_session, staff_user, org cascade`
   );
 
@@ -109,6 +110,22 @@ async function main() {
       status: "active",
     });
   }
+
+  // ---- M2: workflow stages (default template per org, deterministic ids) ----
+
+  const stageId = (orgN: 1 | 2, position: number) =>
+    `ee${orgN}00000-0000-4000-8000-00000000000${position + 1}`;
+  const stageIdsByKey: Record<1 | 2, Record<string, string>> = { 1: {}, 2: {} };
+  for (const orgN of [1, 2] as const) {
+    await db.insert(schema.engagementStage).values(
+      DEFAULT_ENGAGEMENT_STAGES.map((s) => {
+        const id = stageId(orgN, s.position);
+        stageIdsByKey[orgN][s.key] = id;
+        return { id, orgId: orgN === 1 ? SEED.org1 : SEED.org2, ...s };
+      })
+    );
+  }
+  const stage1 = stageIdsByKey[1];
 
   // ---- M2: households, clients, engagements, notes, contact log -------------
 
@@ -281,17 +298,17 @@ async function main() {
   // Engagements: 2025 tax year spread across the whole pipeline so the
   // workflow board has every column populated.
   const eng = (n: number) => `abcabca1-0000-4000-8000-0000000000${n.toString(16).padStart(2, "0")}`;
-  const ts = (status: string, iso: string) => ({ [status]: iso });
+  const ts = (stageKey: string, iso: string) => ({ [stageKey]: iso });
   await db.insert(schema.engagement).values([
-    { id: eng(1), orgId: SEED.org1, clientId: c.marc, type: "t1", taxYear: 2025, status: "noa_received", assignedToId: u.sam, createdBy: u.joey, statusTimestamps: ts("noa_received", "2026-05-20T15:00:00Z") },
-    { id: eng(2), orgId: SEED.org1, clientId: c.helene, type: "t1", taxYear: 2025, status: "filed", assignedToId: u.sam, createdBy: u.joey, statusTimestamps: ts("filed", "2026-04-28T19:30:00Z") },
-    { id: eng(3), orgId: SEED.org1, clientId: c.an, type: "t1", taxYear: 2025, status: "in_review", assignedToId: u.joey, createdBy: u.maria, statusTimestamps: ts("in_review", "2026-07-08T13:00:00Z") },
-    { id: eng(4), orgId: SEED.org1, clientId: c.linh, type: "t1", taxYear: 2025, status: "awaiting_signature", assignedToId: u.joey, createdBy: u.maria, statusTimestamps: ts("awaiting_signature", "2026-07-15T17:00:00Z") },
-    { id: eng(5), orgId: SEED.org1, clientId: c.ruth, type: "t1", taxYear: 2025, status: "awaiting_docs", assignedToId: u.sam, createdBy: u.joey, statusTimestamps: ts("awaiting_docs", "2026-06-30T14:00:00Z") },
-    { id: eng(6), orgId: SEED.org1, clientId: c.sofia, type: "t1", taxYear: 2025, status: "not_started", createdBy: u.joey },
-    { id: eng(7), orgId: SEED.org1, clientId: c.pinesBirch, type: "t2", taxYear: 2025, status: "in_preparation", assignedToId: u.sam, createdBy: u.joey, statusTimestamps: ts("in_preparation", "2026-07-02T16:00:00Z") },
-    { id: eng(8), orgId: SEED.org1, clientId: c.blackwoodTrust, type: "t3", taxYear: 2025, status: "in_preparation", assignedToId: u.joey, createdBy: u.joey, statusTimestamps: ts("in_preparation", "2026-06-20T16:00:00Z") },
-    { id: eng(9), orgId: SEED.org2, clientId: c.northClient, type: "t1", taxYear: 2025, status: "awaiting_docs", assignedToId: u.northOwner, createdBy: u.northOwner },
+    { id: eng(1), orgId: SEED.org1, clientId: c.marc, type: "t1", taxYear: 2025, stageId: stage1.noa_received, assignedToId: u.sam, createdBy: u.joey, statusTimestamps: ts("noa_received", "2026-05-20T15:00:00Z") },
+    { id: eng(2), orgId: SEED.org1, clientId: c.helene, type: "t1", taxYear: 2025, stageId: stage1.filed, assignedToId: u.sam, createdBy: u.joey, statusTimestamps: ts("filed", "2026-04-28T19:30:00Z") },
+    { id: eng(3), orgId: SEED.org1, clientId: c.an, type: "t1", taxYear: 2025, stageId: stage1.in_review, assignedToId: u.joey, createdBy: u.maria, statusTimestamps: ts("in_review", "2026-07-08T13:00:00Z") },
+    { id: eng(4), orgId: SEED.org1, clientId: c.linh, type: "t1", taxYear: 2025, stageId: stage1.awaiting_signature, assignedToId: u.joey, createdBy: u.maria, statusTimestamps: ts("awaiting_signature", "2026-07-15T17:00:00Z") },
+    { id: eng(5), orgId: SEED.org1, clientId: c.ruth, type: "t1", taxYear: 2025, stageId: stage1.awaiting_docs, assignedToId: u.sam, createdBy: u.joey, statusTimestamps: ts("awaiting_docs", "2026-06-30T14:00:00Z") },
+    { id: eng(6), orgId: SEED.org1, clientId: c.sofia, type: "t1", taxYear: 2025, stageId: stage1.not_started, createdBy: u.joey },
+    { id: eng(7), orgId: SEED.org1, clientId: c.pinesBirch, type: "t2", taxYear: 2025, stageId: stage1.in_preparation, assignedToId: u.sam, createdBy: u.joey, statusTimestamps: ts("in_preparation", "2026-07-02T16:00:00Z") },
+    { id: eng(8), orgId: SEED.org1, clientId: c.blackwoodTrust, type: "t3", taxYear: 2025, stageId: stage1.in_preparation, assignedToId: u.joey, createdBy: u.joey, statusTimestamps: ts("in_preparation", "2026-06-20T16:00:00Z") },
+    { id: eng(9), orgId: SEED.org2, clientId: c.northClient, type: "t1", taxYear: 2025, stageId: stageIdsByKey[2].awaiting_docs, assignedToId: u.northOwner, createdBy: u.northOwner },
   ]);
 
   await db.insert(schema.clientNote).values([

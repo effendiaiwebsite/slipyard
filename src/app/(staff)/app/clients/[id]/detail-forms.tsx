@@ -4,8 +4,6 @@ import { Pin, PinOff } from "lucide-react";
 import { useActionState, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { STATUS_META } from "@/lib/clients";
-import { ENGAGEMENT_STATUSES, type EngagementStatus } from "@/db/schema";
 import {
   addContactLogEntry,
   addNote,
@@ -148,10 +146,12 @@ export function NewEngagementForm({
 
 export function TransitionSelect({
   engagementId,
-  status,
+  stageId,
+  stages,
 }: {
   engagementId: string;
-  status: EngagementStatus;
+  stageId: string;
+  stages: Option[];
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +159,7 @@ export function TransitionSelect({
     <span className="inline-flex items-center gap-2">
       <select
         aria-label="Change stage"
-        value={status}
+        value={stageId}
         disabled={isPending}
         onChange={(e) =>
           startTransition(async () => {
@@ -170,9 +170,9 @@ export function TransitionSelect({
         }
         className={selectCls}
       >
-        {ENGAGEMENT_STATUSES.map((s) => (
-          <option key={s} value={s}>
-            {STATUS_META[s].label}
+        {stages.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
           </option>
         ))}
       </select>

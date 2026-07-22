@@ -1,6 +1,6 @@
-import { and, desc, eq, ilike, isNull, max, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, max, ne, sql } from "drizzle-orm";
 import { db, schema } from ".";
-import type { EngagementStatus } from "./schema";
+import { DEFAULT_ENGAGEMENT_STAGES, type StageCategory } from "./schema";
 
 /**
  * Org-scoped repository layer — the ONLY sanctioned path to tenant data.
@@ -303,8 +303,12 @@ export class OrgScope {
         .orderBy(schema.client.displayName);
 
       const engagements = await tx
-        .select()
+        .select({ engagement: schema.engagement, stage: schema.engagementStage })
         .from(schema.engagement)
+        .innerJoin(
+          schema.engagementStage,
+          eq(schema.engagement.stageId, schema.engagementStage.id)
+        )
         .where(eq(schema.engagement.orgId, this.orgId))
         .orderBy(desc(schema.engagement.taxYear), desc(schema.engagement.createdAt));
 
@@ -320,7 +324,8 @@ export class OrgScope {
       // First row per client is the latest engagement (ordered above).
       const latestByClient = new Map<string, (typeof engagements)[number]>();
       for (const e of engagements)
-        if (!latestByClient.has(e.clientId)) latestByClient.set(e.clientId, e);
+        if (!latestByClient.has(e.engagement.clientId))
+          latestByClient.set(e.engagement.clientId, e);
       const lastByClient = new Map(lastContacts.map((r) => [r.clientId, r.last]));
 
       return clients.map((row) => ({
@@ -390,8 +395,16 @@ export class OrgScope {
         .limit(50);
 
       const engagements = await tx
-        .select({ engagement: schema.engagement, assignedName: schema.staffUser.name })
+        .select({
+          engagement: schema.engagement,
+          assignedName: schema.staffUser.name,
+          stage: schema.engagementStage,
+        })
         .from(schema.engagement)
+        .innerJoin(
+          schema.engagementStage,
+          eq(schema.engagement.stageId, schema.engagementStage.id)
+        )
         .leftJoin(schema.staffUser, eq(schema.engagement.assignedToId, schema.staffUser.id))
         .where(
           and(eq(schema.engagement.orgId, this.orgId), eq(schema.engagement.clientId, clientId))
@@ -484,6 +497,111 @@ export class OrgScope {
     });
   }
 
+  // ---- workflow stages (per-org, ADR-0015) -----------------------------------
+
+  async listStages() {
+    return this.tx((tx) =>
+      tx
+        .select()
+        .from(schema.engagementStage)
+        .where(eq(schema.engagementStage.orgId, this.orgId))
+        .orderBy(asc(schema.engagementStage.position))
+    );
+  }
+
+  async getStage(stageId: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.engagementStage)
+        .where(
+          and(eq(schema.engagementStage.orgId, this.orgId), eq(schema.engagementStage.id, stageId))
+        );
+      return rows[0] ?? null;
+    });
+  }
+
+  /** Appends at the end; key must be unique within the org (caller slugifies). */
+  async createStage(fields: { key: string; label: string; category: StageCategory }) {
+    return this.tx(async (tx) => {
+      const [{ maxPos }] = await tx
+        .select({ maxPos: sql<number>`coalesce(max(position), -1)::int` })
+        .from(schema.engagementStage)
+        .where(eq(schema.engagementStage.orgId, this.orgId));
+      const rows = await tx
+        .insert(schema.engagementStage)
+        .values({ orgId: this.orgId, position: maxPos + 1, ...fields })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async updateStage(stageId: string, fields: Partial<{ label: string; category: StageCategory }>) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.engagementStage)
+        .set(fields)
+        .where(
+          and(eq(schema.engagementStage.orgId, this.orgId), eq(schema.engagementStage.id, stageId))
+        )
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  /** Rewrites position = index for the given full ordering. */
+  async setStagePositions(orderedIds: string[]) {
+    return this.tx(async (tx) => {
+      for (let i = 0; i < orderedIds.length; i++) {
+        await tx
+          .update(schema.engagementStage)
+          .set({ position: i })
+          .where(
+            and(
+              eq(schema.engagementStage.orgId, this.orgId),
+              eq(schema.engagementStage.id, orderedIds[i])
+            )
+          );
+      }
+    });
+  }
+
+  /**
+   * Delete a stage, first moving its engagements to `reassignToId` (same
+   * org). Returns 'in_use' if engagements reference it and no target was
+   * given — callers turn that into a friendly message.
+   */
+  async deleteStage(stageId: string, reassignToId?: string): Promise<"ok" | "in_use" | "not_found"> {
+    return this.tx(async (tx) => {
+      const stages = await tx
+        .select()
+        .from(schema.engagementStage)
+        .where(
+          and(eq(schema.engagementStage.orgId, this.orgId), eq(schema.engagementStage.id, stageId))
+        );
+      if (!stages[0]) return "not_found";
+      const [{ inUse }] = await tx
+        .select({ inUse: sql<number>`count(*)::int` })
+        .from(schema.engagement)
+        .where(and(eq(schema.engagement.orgId, this.orgId), eq(schema.engagement.stageId, stageId)));
+      if (inUse > 0) {
+        if (!reassignToId) return "in_use";
+        await tx
+          .update(schema.engagement)
+          .set({ stageId: reassignToId, updatedAt: new Date() })
+          .where(
+            and(eq(schema.engagement.orgId, this.orgId), eq(schema.engagement.stageId, stageId))
+          );
+      }
+      await tx
+        .delete(schema.engagementStage)
+        .where(
+          and(eq(schema.engagementStage.orgId, this.orgId), eq(schema.engagementStage.id, stageId))
+        );
+      return "ok";
+    });
+  }
+
   // ---- engagements -----------------------------------------------------------
 
   async listEngagementsWithMeta(opts?: { assignedToId?: string; taxYear?: number }) {
@@ -497,9 +615,14 @@ export class OrgScope {
           clientName: schema.client.displayName,
           clientType: schema.client.type,
           assignedName: schema.staffUser.name,
+          stage: schema.engagementStage,
         })
         .from(schema.engagement)
         .innerJoin(schema.client, eq(schema.engagement.clientId, schema.client.id))
+        .innerJoin(
+          schema.engagementStage,
+          eq(schema.engagement.stageId, schema.engagementStage.id)
+        )
         .leftJoin(schema.staffUser, eq(schema.engagement.assignedToId, schema.staffUser.id))
         .where(and(...conds))
         .orderBy(desc(schema.engagement.updatedAt));
@@ -522,6 +645,7 @@ export class OrgScope {
     clientId: string;
     type: "t1" | "t2" | "t3" | "other";
     taxYear: number;
+    stageId: string;
     assignedToId?: string | null;
   }) {
     return this.tx(async (tx) => {
@@ -533,9 +657,17 @@ export class OrgScope {
     });
   }
 
-  /** Set status + stamp the moment it was entered (statusTimestamps[status]). */
-  async transitionEngagement(engagementId: string, status: EngagementStatus) {
+  /** Move to a stage + stamp the moment it was entered (statusTimestamps[stage.key]). */
+  async transitionEngagement(engagementId: string, stageId: string) {
     return this.tx(async (tx) => {
+      const stages = await tx
+        .select()
+        .from(schema.engagementStage)
+        .where(
+          and(eq(schema.engagementStage.orgId, this.orgId), eq(schema.engagementStage.id, stageId))
+        );
+      const stage = stages[0];
+      if (!stage) return null;
       const rows = await tx
         .select()
         .from(schema.engagement)
@@ -547,8 +679,11 @@ export class OrgScope {
       const updated = await tx
         .update(schema.engagement)
         .set({
-          status,
-          statusTimestamps: { ...current.statusTimestamps, [status]: new Date().toISOString() },
+          stageId,
+          statusTimestamps: {
+            ...current.statusTimestamps,
+            [stage.key]: new Date().toISOString(),
+          },
           updatedAt: new Date(),
         })
         .where(
@@ -575,17 +710,17 @@ export class OrgScope {
     });
   }
 
-  /** Dashboard: engagement counts grouped by status (optionally one assignee's). */
-  async countEngagementsByStatus(assignedToId?: string) {
+  /** Dashboard: engagement counts per stage (optionally one assignee's). */
+  async countEngagementsByStage(assignedToId?: string) {
     return this.tx(async (tx) => {
       const conds = [eq(schema.engagement.orgId, this.orgId)];
       if (assignedToId) conds.push(eq(schema.engagement.assignedToId, assignedToId));
       const rows = await tx
-        .select({ status: schema.engagement.status, count: sql<number>`count(*)::int` })
+        .select({ stageId: schema.engagement.stageId, count: sql<number>`count(*)::int` })
         .from(schema.engagement)
         .where(and(...conds))
-        .groupBy(schema.engagement.status);
-      return new Map(rows.map((r) => [r.status, r.count]));
+        .groupBy(schema.engagement.stageId);
+      return new Map(rows.map((r) => [r.stageId, r.count]));
     });
   }
 }
@@ -613,6 +748,11 @@ export async function createOrgForUser(
       trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
     });
     await tx.insert(schema.orgMembership).values({ orgId, userId, role: "owner" });
+    // Every new firm starts from the default workflow template (ADR-0015);
+    // owners customize it in Settings → Workflow stages.
+    await tx
+      .insert(schema.engagementStage)
+      .values(DEFAULT_ENGAGEMENT_STAGES.map((s) => ({ orgId, ...s })));
     await tx.insert(schema.auditLog).values({
       orgId,
       actorType: "staff",

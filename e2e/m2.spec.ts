@@ -53,11 +53,11 @@ test("accountant works a client end-to-end: grid → search → detail → note 
   // Transition Marc's engagement (assigned to sam) back to Filed. The fresh
   // "since <today>" stamp only renders once the server action + revalidation
   // land — waiting on it avoids racing the reload.
-  await page.getByLabel("Change stage").selectOption("filed");
+  await page.getByLabel("Change stage").selectOption({ label: "Filed" });
   const today = new Date().toLocaleDateString("en-CA");
   await expect(page.getByText(`since ${today}`)).toBeVisible({ timeout: 15_000 });
   await page.reload();
-  await expect(page.getByLabel("Change stage")).toHaveValue("filed");
+  await expect(page.getByLabel("Change stage").locator("option:checked")).toHaveText("Filed");
 });
 
 test("workflow board: sam drags his own card; it persists", async ({ page }) => {
@@ -81,6 +81,10 @@ test("workflow board: sam drags his own card; it persists", async ({ page }) => 
   await expect(
     page.locator('[data-status="in_preparation"]').locator(`[data-engagement="${RUTH_ENGAGEMENT}"]`)
   ).toBeVisible();
+  // The optimistic move is instant; the fresh "since <today>" stamp only
+  // renders after the server action + revalidation — wait before reloading.
+  const today = new Date().toLocaleDateString("en-CA");
+  await expect(card).toContainText(today, { timeout: 15_000 });
   await page.reload();
   await expect(
     page.locator('[data-status="in_preparation"]').locator(`[data-engagement="${RUTH_ENGAGEMENT}"]`)
@@ -116,4 +120,26 @@ test("tenant isolation: the other firm sees none of Lakeside's clients", async (
   await expect(page.getByRole("cell", { name: /Marc Desjardins/ })).toHaveCount(0);
   await page.goto("/app/workflow");
   await expect(page.locator(`[data-engagement="${MARC_ENGAGEMENT}"]`)).toHaveCount(0);
+});
+
+test("owner customizes workflow stages; the board follows (ADR-0015)", async ({ page }) => {
+  await loginEnrollingMfa(page, "joey@lakesidecpa.test");
+  await page.goto("/app/settings/stages");
+
+  // Rename "In review" → "Partner review".
+  await page.getByLabel("Rename In review").first().click();
+  await page.getByLabel("Rename In review").fill("Partner review");
+  await page.getByLabel("Save name").click();
+  await expect(page.getByText("Partner review").first()).toBeVisible();
+
+  // Add a brand-new stage.
+  await page.getByPlaceholder("New stage name").fill("EFILE queue");
+  await page.getByRole("button", { name: "Add stage" }).click();
+  await expect(page.getByText("EFILE queue").first()).toBeVisible();
+
+  // Board reflects both immediately.
+  await page.goto("/app/workflow");
+  await expect(page.locator('[data-status="in_review"]').getByText("Partner review")).toBeVisible();
+  await expect(page.locator('[data-status="efile-queue"]')).toBeVisible();
+  await expect(page.locator('[data-status="in_review"]').getByText("An Nguyen")).toBeVisible();
 });
