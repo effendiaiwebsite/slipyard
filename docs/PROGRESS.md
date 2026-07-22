@@ -68,10 +68,21 @@ _Last updated: 2026-07-21 (M2 complete + customizable workflow stages)_
 - ~~ADR-0013 stage names~~ RESOLVED by ADR-0015: stages are per-org editable
   (Settings → Workflow stages); Joey tunes his own template.
 
+## M3 PREREQUISITES (done 2026-07-21 with Satinder)
+- Dev S3 bucket `accountant-crm-dev` (ca-central-1, versioned, private)
+  created; IAM user `accountant-crm-dev-app` with bucket-scoped policy; keys
+  in .env (AWS_ACCESS_KEY_ID/SECRET, S3_BUCKET). Verified live: put→get→
+  delete round-trip passed. KMS_KEY_ID deliberately empty in dev (S3 default
+  encryption; real KMS key at production setup). @aws-sdk/client-s3 installed.
+- Docker Desktop installed via winget (Windows 11 Home / WSL2) — resolves
+  ADR-0007's ClamAV question. First-launch/engine check + `docker compose up
+  -d clamav` still pending at next session start.
+- AWS budget alarm skipped for now (new account on free credits with
+  automatic credit-exhaustion notifications).
+
 ## NEXT 3 CONCRETE STEPS (M3 — Vault & checklists)
-1. S3 pipeline (ca-central-1 + KMS, org/{orgId}/quarantine|vault keys),
-   presigned POST with type/25MB caps, ClamAV scan job, promote/flag flow —
-   needs Docker or a dev bucket + local clamd (ADR-0007 revisit).
+1. S3 pipeline (org/{orgId}/quarantine|vault keys), presigned POST with
+   type/25MB caps, ClamAV scan job (docker compose clamd), promote/flag flow.
 2. document + checklist_item tables (+ RLS), checklist engine seeded from
    engagement type, intake queue UI (clerk documents.intake_upload path).
 3. Missing-docs dashboard + Returns page; auto-advance engagement to
