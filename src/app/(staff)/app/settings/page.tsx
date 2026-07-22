@@ -44,6 +44,16 @@ export default async function SettingsPage() {
             </Card>
           </Link>
         )}
+        {can(ctx.actor, "messages.manage_templates") && (
+          <Link href="/app/settings/templates" className="group">
+            <Card className="transition group-hover:border-slate-300">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">Message templates →</CardTitle>
+                <CardDescription>Reusable emails/texts + automatic reminders.</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
       </div>
 
       <Card>
@@ -72,8 +82,7 @@ export default async function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-sm font-medium">Coming later</CardTitle>
           <CardDescription>
-            Message templates (M5) · Checklist templates (M3) · Retention policy (M9) · Data
-            import wizard (M9)
+            Checklist templates · Retention policy (M9) · Data import wizard (M9)
           </CardDescription>
         </CardHeader>
       </Card>

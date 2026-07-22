@@ -31,18 +31,49 @@ export const membershipStatus = pgEnum("membership_status", ["active", "deactiva
 
 export const actorType = pgEnum("actor_type", ["staff", "client", "system", "ai"]);
 
+/**
+ * Reminder automation config (M5). Policies key on stage CATEGORY only
+ * (ADR-0015) — never stage keys/labels, which firms rename freely.
+ */
+export type ReminderSettings = {
+  enabled: boolean;
+  /** Nudge once an engagement has sat in an awaiting_docs-category stage this long. */
+  awaiting_docs_days: number;
+  /** Minimum days between nudges for the same engagement. */
+  cadence_days: number;
+  /** 'preferred' follows client.preferred_channel (falling back to whichever address exists). */
+  channel: "preferred" | "email" | "sms";
+  /** Message template to use; null = the org's seeded default by channel. */
+  template_id: string | null;
+};
+
+export const defaultReminderSettings: ReminderSettings = {
+  enabled: false,
+  awaiting_docs_days: 7,
+  cadence_days: 3,
+  channel: "preferred",
+  template_id: null,
+};
+
 export type OrgSettings = {
   ai_enabled: boolean;
   /** 'all_read' (default): accountants read all firm clients, write assigned.
    *  'assigned_only': accountants see only assigned clients. Confirm default
    *  with customer (docs/DECISIONS.md ADR-0004). */
   accountant_scope_mode: "all_read" | "assigned_only";
+  /** Absent on orgs created before M5 — read via reminderSettings(). */
+  reminders?: ReminderSettings;
 };
 
 export const defaultOrgSettings: OrgSettings = {
   ai_enabled: true,
   accountant_scope_mode: "all_read",
 };
+
+/** Settings-with-defaults accessor — pre-M5 orgs have no `reminders` key. */
+export function reminderSettings(settings: OrgSettings): ReminderSettings {
+  return { ...defaultReminderSettings, ...settings.reminders };
+}
 
 export const org = pgTable("org", {
   id: uuid("id").primaryKey().defaultRandom(),

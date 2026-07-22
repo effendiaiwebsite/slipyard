@@ -106,6 +106,27 @@
       "when": 1784710968591,
       "tag": "0014_m4_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1784717093936,
+      "tag": "0015_m5_messaging",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1784717093937,
+      "tag": "0016_m5_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784717093938,
+      "tag": "0017_m5_pgboss_grant",
+      "breakpoints": true
     }
   ]
 }

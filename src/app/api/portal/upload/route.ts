@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { applyAutoAdvance } from "@/lib/checklists";
-import { scanAndRouteDocument } from "@/lib/documents";
+import { enqueueDocumentScan, runDocumentScanJob } from "@/lib/jobs";
 import { env, features } from "@/lib/env";
 import { getPortalContext } from "@/lib/portal-context";
 import { rateLimit } from "@/lib/rate-limit";
@@ -127,17 +126,25 @@ export async function POST(request: Request) {
     },
   });
 
-  doc = await scanAndRouteDocument(ctx.scope, doc, bytes);
-
-  if (doc.status === "clean" && checklistItem) {
-    await ctx.scope.updateChecklistItem(checklistItem.id, {
-      status: "received",
-      documentId: doc.id,
-    });
-    await applyAutoAdvance(ctx.scope, checklistItem.engagementId);
+  // ADR-0021: the scan runs in a pg-boss job — the client gets an instant
+  // friendly "received" instead of watching a spinner for the scanner (the
+  // M4 round trip measured ~7.7 s through a tunnel). A file the scanner
+  // later flags stays quarantined and surfaces to STAFF (Portal badge);
+  // checklist ticking also happens on the clean verdict in the job.
+  const scanJob = {
+    orgId: ctx.orgId,
+    documentId: doc.id,
+    checklistItemId: checklistItem?.id ?? null,
+  };
+  if (await enqueueDocumentScan(scanJob)) {
+    return NextResponse.json({ documentId: doc.id, outcome: "received" });
   }
 
-  // Friendly outcome only — scanner details never reach the portal.
+  // Runner off (JOBS_ENABLED=false, tests): M3 synchronous path via the
+  // same job body — friendly outcome only, scanner details never reach the
+  // portal.
+  await runDocumentScanJob(scanJob).catch(() => {});
+  doc = (await ctx.scope.getDocument(doc.id)) ?? doc;
   return NextResponse.json({
     documentId: doc.id,
     outcome: doc.status === "clean" ? "received" : doc.status === "infected" ? "rejected" : "held",

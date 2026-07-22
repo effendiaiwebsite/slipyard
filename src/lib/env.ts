@@ -47,10 +47,20 @@ const schema = z.object({
   CLAMAV_HOST: z.preprocess(emptyToUndefined, z.string().default("127.0.0.1")),
   CLAMAV_PORT: z.preprocess(emptyToUndefined, z.coerce.number().int().default(3310)),
 
-  // Twilio (optional until M5; outbox mode without it)
+  // Twilio (optional; outbox mode without it — set all three to go real)
   TWILIO_ACCOUNT_SID: optionalStr,
   TWILIO_AUTH_TOKEN: optionalStr,
   TWILIO_FROM_NUMBER: optionalStr,
+
+  // Jobs (M5): pg-boss runs inside the Next server (instrumentation.ts).
+  // JOBS_ENABLED=false turns the runner off (scripts, one-off tooling).
+  JOBS_ENABLED: z.preprocess(emptyToUndefined, z.enum(["true", "false"]).default("true")),
+  // Non-production only: how often the reminder sweep runs (default 5 s in
+  // dev/test — the "accelerated clock"; production uses a cron schedule).
+  REMINDER_SWEEP_INTERVAL_MS: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(500).optional()
+  ),
 
   // Email
   EMAIL_MODE: z.preprocess(emptyToUndefined, z.enum(["outbox", "ses", "smtp"]).default("outbox")),
@@ -88,6 +98,12 @@ function loadEnv() {
   if (!!env.GOOGLE_CLIENT_ID !== !!env.GOOGLE_CLIENT_SECRET) {
     throw new Error("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together");
   }
+  const twilio = [env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN, env.TWILIO_FROM_NUMBER];
+  if (twilio.some(Boolean) && !twilio.every(Boolean)) {
+    throw new Error(
+      "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER must be set together"
+    );
+  }
   return env;
 }
 
@@ -99,4 +115,5 @@ export const features = {
   s3: !!env.S3_BUCKET,
   realSms: !!env.TWILIO_ACCOUNT_SID,
   realAi: !!env.ANTHROPIC_API_KEY,
+  jobs: env.JOBS_ENABLED === "true",
 } as const;

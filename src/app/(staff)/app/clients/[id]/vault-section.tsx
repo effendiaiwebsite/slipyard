@@ -18,9 +18,10 @@ import {
 } from "../../documents/actions";
 
 /**
- * Client-detail vault UI (M3): the Documents card and the per-engagement
- * checklist. Uploads POST multipart to /api/vault/upload (quarantine →
- * scan → vault happens before the response), then refresh.
+ * Client-detail vault UI (M3; async scan M5): the Documents card and the
+ * per-engagement checklist. Uploads POST multipart to /api/vault/upload —
+ * the response returns once the file is quarantined, then we poll
+ * /api/vault/scan-status until the pg-boss scan job settles it (ADR-0021).
  */
 
 type ActionResult = { error?: string; ok?: boolean; autoAdvancedTo?: string; url?: string } | null;
@@ -52,7 +53,7 @@ export type ChecklistItemRow = {
 const selectCls =
   "h-8 px-2 text-xs rounded-md bg-white ring-1 ring-slate-200 focus:ring-slate-400 outline-none";
 
-/** Shared uploader: posts the file, reports scan outcome, refreshes. */
+/** Shared uploader: posts the file, polls the scan verdict, refreshes. */
 function useUpload(onDone?: (msg: string | null) => void) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -68,21 +69,34 @@ function useUpload(onDone?: (msg: string | null) => void) {
       const res = await fetch("/api/vault/upload", { method: "POST", body: fd });
       const body = (await res.json()) as {
         error?: string;
+        documentId?: string;
         status?: string;
         scanResult?: string;
-        autoAdvancedTo?: string | null;
       };
       if (!res.ok) {
         setError(body.error ?? "Upload failed.");
         return;
       }
+
+      // The scan now runs in a background job (M5) — poll briefly so the
+      // uploader still sees the verdict without a manual refresh.
+      let status = body.status ?? "pending_scan";
+      let scanResult = body.scanResult;
+      if (status === "pending_scan" && body.documentId) {
+        const settled = await pollScanStatus(body.documentId);
+        if (settled) {
+          status = settled.status;
+          scanResult = settled.scanResult;
+        }
+      }
+
       let message: string | null = null;
-      if (body.status === "infected") {
-        message = `Virus detected (${body.scanResult}) — the file was quarantined, not stored in the vault.`;
-      } else if (body.status === "scan_failed") {
+      if (status === "infected") {
+        message = `Virus detected (${scanResult}) — the file was quarantined, not stored in the vault.`;
+      } else if (status === "scan_failed") {
         message = "Uploaded, but the virus scanner was unavailable. Retry the scan from the list below.";
-      } else if (body.autoAdvancedTo) {
-        message = `Received — engagement moved to “${body.autoAdvancedTo}”.`;
+      } else if (status === "pending_scan") {
+        message = "Uploaded — the virus scan is still running; the status below updates when it finishes.";
       }
       onDone?.(message);
       router.refresh();
@@ -94,6 +108,24 @@ function useUpload(onDone?: (msg: string | null) => void) {
   }
 
   return { upload, busy, error, setError };
+}
+
+/** Poll the async scan for up to ~15 s; null = still pending (give up quietly). */
+async function pollScanStatus(
+  documentId: string
+): Promise<{ status: string; scanResult?: string } | null> {
+  for (let i = 0; i < 15; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const res = await fetch(`/api/vault/scan-status?id=${documentId}`);
+      if (!res.ok) return null;
+      const body = (await res.json()) as { status: string; scanResult?: string };
+      if (body.status !== "pending_scan") return body;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export function DocumentsCard({

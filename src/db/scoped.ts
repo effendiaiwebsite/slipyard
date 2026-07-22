@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, max, ne, sql } from "drizzle-orm";
 import { db, schema } from ".";
 import { DEFAULT_ENGAGEMENT_STAGES, type StageCategory } from "./schema";
+import { DEFAULT_MESSAGE_TEMPLATES } from "@/lib/templates";
 
 /**
  * Org-scoped repository layer — the ONLY sanctioned path to tenant data.
@@ -190,6 +191,243 @@ export class OrgScope {
         .orderBy(desc(schema.outbox.createdAt))
         .limit(limit)
     );
+  }
+
+  async updateOutbox(
+    outboxId: string,
+    fields: Partial<{
+      status: "queued" | "sent" | "failed";
+      provider: string;
+      providerMessageId: string | null;
+      error: string | null;
+      sentAt: Date | null;
+    }>
+  ) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.outbox)
+        .set(fields)
+        .where(and(eq(schema.outbox.orgId, this.orgId), eq(schema.outbox.id, outboxId)))
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  // ---- message templates (M5) -------------------------------------------------
+
+  async listMessageTemplates() {
+    return this.tx((tx) =>
+      tx
+        .select()
+        .from(schema.messageTemplate)
+        .where(eq(schema.messageTemplate.orgId, this.orgId))
+        .orderBy(asc(schema.messageTemplate.name))
+    );
+  }
+
+  async getMessageTemplate(templateId: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.messageTemplate)
+        .where(
+          and(
+            eq(schema.messageTemplate.orgId, this.orgId),
+            eq(schema.messageTemplate.id, templateId)
+          )
+        );
+      return rows[0] ?? null;
+    });
+  }
+
+  async createMessageTemplate(fields: {
+    name: string;
+    channel: "email" | "sms";
+    subject?: string | null;
+    body: string;
+  }) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.messageTemplate)
+        .values({ orgId: this.orgId, createdBy: this.userId, ...fields })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async updateMessageTemplate(
+    templateId: string,
+    fields: Partial<{
+      name: string;
+      subject: string | null;
+      body: string;
+      archivedAt: Date | null;
+    }>
+  ) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.messageTemplate)
+        .set({ ...fields, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.messageTemplate.orgId, this.orgId),
+            eq(schema.messageTemplate.id, templateId)
+          )
+        )
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  // ---- messages (M5 send log) -------------------------------------------------
+
+  async createMessage(fields: {
+    clientId: string;
+    engagementId?: string | null;
+    templateId?: string | null;
+    batchId?: string | null;
+    kind: "manual" | "mass" | "reminder";
+    channel: "email" | "sms";
+    toAddress: string;
+    subject?: string | null;
+    body: string;
+    status?: "queued" | "sent" | "failed" | "skipped";
+    skipReason?: string | null;
+    outboxId?: string | null;
+    error?: string | null;
+  }) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.message)
+        .values({
+          orgId: this.orgId,
+          createdBy: this.userId,
+          sentAt: fields.status === "sent" ? new Date() : null,
+          ...fields,
+        })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async getMessage(messageId: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.message)
+        .where(and(eq(schema.message.orgId, this.orgId), eq(schema.message.id, messageId)));
+      return rows[0] ?? null;
+    });
+  }
+
+  async updateMessage(
+    messageId: string,
+    fields: Partial<{
+      status: "queued" | "sent" | "failed" | "skipped";
+      skipReason: string | null;
+      outboxId: string | null;
+      error: string | null;
+      sentAt: Date | null;
+    }>
+  ) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.message)
+        .set(fields)
+        .where(and(eq(schema.message.orgId, this.orgId), eq(schema.message.id, messageId)))
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  /** Send log (Messages page): recent messages with client names. */
+  async listRecentMessages(limit = 200) {
+    return this.tx((tx) =>
+      tx
+        .select({
+          message: schema.message,
+          clientName: schema.client.displayName,
+          templateName: schema.messageTemplate.name,
+          senderName: schema.staffUser.name,
+        })
+        .from(schema.message)
+        .innerJoin(schema.client, eq(schema.message.clientId, schema.client.id))
+        .leftJoin(schema.messageTemplate, eq(schema.message.templateId, schema.messageTemplate.id))
+        .leftJoin(schema.staffUser, eq(schema.message.createdBy, schema.staffUser.id))
+        .where(eq(schema.message.orgId, this.orgId))
+        .orderBy(desc(schema.message.createdAt))
+        .limit(limit)
+    );
+  }
+
+  /** Reminder cadence guard: when was this engagement last nudged? */
+  async latestReminderAt(engagementId: string): Promise<Date | null> {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select({ createdAt: schema.message.createdAt })
+        .from(schema.message)
+        .where(
+          and(
+            eq(schema.message.orgId, this.orgId),
+            eq(schema.message.engagementId, engagementId),
+            eq(schema.message.kind, "reminder"),
+            ne(schema.message.status, "failed")
+          )
+        )
+        .orderBy(desc(schema.message.createdAt))
+        .limit(1);
+      return rows[0]?.createdAt ?? null;
+    });
+  }
+
+  /**
+   * Reminder sweep input: engagements whose CURRENT stage has the given
+   * category (ADR-0015 — automations never key on stage keys/labels), with
+   * the client fields channel resolution needs.
+   */
+  async listEngagementsByStageCategory(category: StageCategory) {
+    return this.tx((tx) =>
+      tx
+        .select({
+          engagement: schema.engagement,
+          stage: schema.engagementStage,
+          client: {
+            id: schema.client.id,
+            displayName: schema.client.displayName,
+            email: schema.client.email,
+            phone: schema.client.phone,
+            preferredChannel: schema.client.preferredChannel,
+            smsOptOutAt: schema.client.smsOptOutAt,
+            status: schema.client.status,
+          },
+          accountantName: schema.staffUser.name,
+        })
+        .from(schema.engagement)
+        .innerJoin(
+          schema.engagementStage,
+          eq(schema.engagement.stageId, schema.engagementStage.id)
+        )
+        .innerJoin(schema.client, eq(schema.engagement.clientId, schema.client.id))
+        .leftJoin(schema.staffUser, eq(schema.engagement.assignedToId, schema.staffUser.id))
+        .where(
+          and(
+            eq(schema.engagement.orgId, this.orgId),
+            eq(schema.engagementStage.category, category)
+          )
+        )
+    );
+  }
+
+  /** STOP/START consent flip — audited by the caller. */
+  async setClientSmsOptOut(clientId: string, optedOut: boolean) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.client)
+        .set({ smsOptOutAt: optedOut ? new Date() : null, updatedAt: new Date() })
+        .where(and(eq(schema.client.orgId, this.orgId), eq(schema.client.id, clientId)))
+        .returning();
+      return rows[0] ?? null;
+    });
   }
 
   // ---- invitations -------------------------------------------------------------
@@ -1167,6 +1405,11 @@ export async function createOrgForUser(
     await tx
       .insert(schema.engagementStage)
       .values(DEFAULT_ENGAGEMENT_STAGES.map((s) => ({ orgId, ...s })));
+    // ...and the default message templates (M5); owners edit them in
+    // Settings → Templates.
+    await tx
+      .insert(schema.messageTemplate)
+      .values(DEFAULT_MESSAGE_TEMPLATES.map((t) => ({ orgId, ...t })));
     await tx.insert(schema.auditLog).values({
       orgId,
       actorType: "staff",
@@ -1279,6 +1522,43 @@ export async function recordStripeEventOnce(eventId: string, type: string): Prom
     .values({ id: eventId, type })
     .onConflictDoNothing();
   return (res.rowCount ?? 0) > 0;
+}
+
+/**
+ * Reminders sweep (M5): enumerate orgs — a system job with no org context.
+ * RLS policy `org_system_sweep` exposes org rows only while the
+ * app.system_job GUC is armed (ADR-0009 pattern; crm_app-internal, never
+ * reachable from request input). Per-org work then goes through a normal
+ * OrgScope(orgId, null).
+ */
+export async function listOrgsForReminderSweep() {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('app.system_job', 'reminders-sweep', true)`);
+    return tx
+      .select({ id: schema.org.id, name: schema.org.name, settings: schema.org.settings })
+      .from(schema.org);
+  });
+}
+
+/**
+ * Twilio inbound webhook (STOP/START): find every client with this phone —
+ * across orgs, because the sender's org is unknowable from the SMS alone
+ * (and a phone shared across two firms should opt out of both). RLS policy
+ * `client_by_phone` keys on the GUC; the caller has already validated the
+ * Twilio signature. Consent flips then run per-org via OrgScope.
+ */
+export async function findClientsByPhone(phone: string) {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('app.sms_from', ${phone}, true)`);
+    return tx
+      .select({
+        id: schema.client.id,
+        orgId: schema.client.orgId,
+        smsOptOutAt: schema.client.smsOptOutAt,
+      })
+      .from(schema.client)
+      .where(eq(schema.client.phone, phone));
+  });
 }
 
 /**

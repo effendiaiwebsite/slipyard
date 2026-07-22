@@ -3,6 +3,7 @@ import { hashPassword } from "better-auth/crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { encryptField } from "../src/lib/crypto";
+import { DEFAULT_MESSAGE_TEMPLATES } from "../src/lib/templates";
 import { features } from "../src/lib/env";
 import { putObject } from "../src/lib/storage";
 import * as schema from "../src/db/schema";
@@ -64,7 +65,8 @@ async function main() {
 
   // Wipe in FK order. TRUNCATE ... CASCADE keeps this list forgiving.
   await pool.query(
-    `truncate table portal_token, checklist_item, document, contact_log, client_note,
+    `truncate table message, message_template, outbox, portal_token, checklist_item,
+     document, contact_log, client_note,
      engagement, engagement_stage, client, household, audit_log, invitation,
      org_membership, auth_two_factor, auth_verification, auth_account,
      auth_session, staff_user, org cascade`
@@ -130,6 +132,20 @@ async function main() {
   }
   const stage1 = stageIdsByKey[1];
 
+  // ---- M5: default message templates (same set org bootstrap creates) --------
+
+  const templateId = (orgN: 1 | 2, i: number) =>
+    `5e50000${orgN}-0000-4000-8000-00000000000${i + 1}`;
+  for (const orgN of [1, 2] as const) {
+    await db.insert(schema.messageTemplate).values(
+      DEFAULT_MESSAGE_TEMPLATES.map((t, i) => ({
+        id: templateId(orgN, i),
+        orgId: orgN === 1 ? SEED.org1 : SEED.org2,
+        ...t,
+      }))
+    );
+  }
+
   // ---- M2: households, clients, engagements, notes, contact log -------------
 
   await db.insert(schema.household).values([
@@ -172,6 +188,8 @@ async function main() {
       province: "ON",
       postalCode: "M4E 1A1",
       dateOfBirth: "1951-09-02",
+      // Texted STOP — mass sends and reminders must skip her SMS channel.
+      smsOptOutAt: new Date("2026-07-01T12:00:00Z"),
       assignedAccountantId: u.sam,
       householdId: SEED.households.desjardins,
       tags: ["senior"],
@@ -524,7 +542,7 @@ async function main() {
 
   await pool.end();
 
-  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements, 6 documents, 11 checklist items, 3 portal tokens.");
+  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements, 6 documents, 11 checklist items, 3 portal tokens, 6 message templates.");
   console.log("Dev logins (all password: %s):", SEED.password);
   for (const s of staff) console.log(`  ${s.role.padEnd(10)} ${s.email}  (${s.orgId === SEED.org1 ? "Lakeside CPA" : "Northern Tax"})`);
   console.log("First login will require TOTP enrollment (mandatory 2FA).");

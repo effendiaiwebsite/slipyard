@@ -22,9 +22,12 @@
   tunnel; axe checks pass; AAA verified. _(All three verified 2026-07-22:
   axe AAA green in e2e, real-phone tunnel run done with Satinder — capture
   detection tuning deferred to M10, see TESTING.md.)_
-- [ ] **M5 — Messaging.** Templates, outbox + Twilio/SES adapters, reminder
+- [x] **M5 — Messaging.** Templates, outbox + Twilio/SES adapters, reminder
   policies via pg-boss, mass send, consent/STOP. ✅ Scheduled reminder fires
-  (accelerated clock); real SMS with keys.
+  (accelerated clock); real SMS with keys. _(Accelerated-clock reminder proven
+  in e2e (m5.spec.ts ACCEPTANCE test) 2026-07-22; real-SMS send pending
+  Twilio credentials from Satinder — adapters are built and env-gated, see
+  PROGRESS.md.)_
 - [ ] **M6 — E-signature.** Placement, remote + in-person, stamping + audit
   page, dashboards, notifications. ✅ T183-like PDF draft→sent→signed with
   correct timestamp format; executed PDF immutable.

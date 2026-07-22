@@ -42,6 +42,10 @@ export const client = pgTable(
     email: text("email"),
     phone: text("phone"), // E.164
     preferredChannel: preferredChannel("preferred_channel").notNull().default("phone"),
+    // SMS consent (M5): set when the client texts STOP (or staff record a
+    // verbal opt-out); cleared on START. Null = OK to text. Every SMS path
+    // checks this BEFORE creating an outbox row.
+    smsOptOutAt: timestamp("sms_opt_out_at", { withTimezone: true }),
     addressLine1: text("address_line1"),
     city: text("city"),
     province: text("province"), // 2-letter, e.g. ON

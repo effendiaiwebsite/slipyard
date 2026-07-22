@@ -173,3 +173,39 @@ script-src (OpenCV compiles WASM; plain eval stays blocked in prod) and
 worker-src 'self' blob:. Camera failure, load failure, or no detected page
 all fall back to the native `<input capture>` camera — the flow never
 dead-ends for the elderly audience.
+
+## ADR-0021 (2026-07-22) — Document scanning moved to pg-boss; portal answers before the verdict
+Revises the synchronous-scan half of ADR-0016 (which explicitly deferred
+this to M5). Upload routes now stop at quarantine: bytes → S3 → a
+`document-scan` job (retryLimit 3) scans, promotes/flags, then satisfies
+the checklist slot + auto-advance on a clean verdict. Staff UIs poll
+/api/vault/scan-status briefly so the uploader still sees the verdict; the
+PORTAL responds "received" immediately — elderly clients should not watch a
+spinner for a scanner (M4 measured ~7.7 s through a tunnel), and a file
+flagged later stays quarantined and surfaces to STAFF, who follow up.
+scan_failed still throws inside the job so pg-boss retries scanner blips;
+the row is never treated as clean. When the runner is off
+(JOBS_ENABLED=false, unit tests) routes fall back to the same job body
+synchronously — one code path, two schedules. The runner itself starts in
+instrumentation.ts (once per Next server instance): one process to operate,
+which fits a small-firm deployment; the pgboss schema is owned by crm_app
+(0016/0017) so its internal DDL needs no superuser.
+
+## ADR-0022 (2026-07-22) — Messaging: message rows for every recipient; sends never retry
+The send log (`message`) records one row per intended CLIENT recipient —
+sent, failed, or skipped(sms_opt_out | no_address) — so a mass batch always
+accounts for everyone; transport rows stay in `outbox` (M1) and link back.
+Provider sends are NOT retried automatically (Twilio/SES creates aren't
+idempotent; a duplicate "reminder" to an elderly client is worse than a
+failed row a human can resend), so message-send jobs run retryLimit 0 and
+deliverQueuedMessage marks failures instead of throwing. Reminder sweeps
+create NO skip rows (they re-evaluate every few seconds — rows would spam
+the log); mass sends DO (a human asked for that exact list). SMS consent
+lives on the client row (sms_opt_out_at), is enforced at the client-send
+layer (raw sendSms still serves portal OTPs and staff invites — Twilio
+blocks carrier-level STOPs regardless), and is mirrored from Twilio's
+inbound webhook, which matches the phone across ALL orgs (a client of two
+firms who texts STOP opts out of both — the safer reading; policy
+client_by_phone, SELECT-only). Reminder policy config hangs off
+org.settings.reminders with code-side defaults (disabled; 7 days; cadence
+3) — no backfill needed, pre-M5 orgs simply read defaults.

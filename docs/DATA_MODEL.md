@@ -211,6 +211,47 @@ cookie. Every portal request re-loads this row, so revocation is immediate.
 No GUC-as-credential policy needed: the JWT's signed org_id claim arms RLS
 before the hash lookup.
 
+## Messaging (M5, RLS FORCEd — drizzle/0016_m5_rls.sql)
+
+### message_template
+| field | type | notes |
+|---|---|---|
+| name | text | unique per org (case handled in actions) |
+| channel | outbox_channel | fixed after creation (subject/body semantics differ) |
+| subject | text null | email only; may carry {placeholders} |
+| body | text | plain text + {placeholders} (src/lib/templates.ts); unknown placeholders rejected at save |
+| archived_at | timestamptz | archive/restore instead of delete (sends reference templates) |
+| created_by | text FK staff_user | |
+
+Every org gets 3 defaults at bootstrap/seed (missing-docs reminder ×2
+channels + season kickoff). The reminder engine falls back to the
+name-matched default when the configured template is archived/mismatched.
+
+### message — the send log (ADR-0022)
+| field | type | notes |
+|---|---|---|
+| client_id | uuid FK client (cascade) | one row per intended CLIENT recipient |
+| engagement_id | uuid FK engagement (set null) | reminder cadence lookups key on this |
+| template_id | uuid FK message_template (set null) | null for future free-form sends |
+| batch_id | uuid null | groups one mass send |
+| kind | message_kind | manual, mass, reminder |
+| channel | outbox_channel | the RESOLVED channel |
+| to_address, subject, body | text | body is the rendered per-recipient text |
+| status | message_status | queued → sent/failed; or skipped (never had transport) |
+| skip_reason | text null | sms_opt_out, no_address |
+| outbox_id | uuid FK outbox (set null) | the transport row; null when skipped |
+| error | text null | provider error on failed |
+| created_by | text FK staff_user null | null = system (reminders) — renders as "Automatic" |
+| sent_at | timestamptz | |
+
+Consent lives on the client row: `client.sms_opt_out_at` (timestamptz null;
+set by the Twilio STOP webhook or a future staff toggle, cleared on START).
+Reminder policy config is `org.settings.reminders` (jsonb; code-side
+defaults — see ReminderSettings in schema/tenancy.ts).
+
+pg-boss keeps its queue tables in the `pgboss` schema (owned by crm_app;
+0016/0017) — not tenant data, payloads carry row ids only.
+
 ## Enums
 subscription_status: trialing, active, past_due, canceled
 staff_role: owner, admin, accountant, clerk
@@ -227,8 +268,10 @@ contact_channel: phone, email, sms, meeting, mail, other
 document_status: pending_scan, clean, infected, scan_failed
 document_source: staff_upload, portal_upload
 checklist_item_status: missing, received, waived
+message_kind: manual, mass, reminder
+message_status: queued, sent, failed, skipped
 
 ## Planned (added at their milestone; spec §3)
-signature_request, cra_authorization, message, time_entry, invoice,
+signature_request, cra_authorization, time_entry, invoice,
 ai_interaction, import_batch, import_mapping_template, staging tables.
 (trusted_helper is folded into portal_token — is_helper/include_household.)

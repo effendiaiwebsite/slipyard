@@ -158,19 +158,24 @@ test("checklist view + upload lands in the vault as portal_upload and checks the
   }).toPass({ timeout: 90_000 });
   await expectNoAxeViolations(portal);
 
-  // The item is now checked off for the client...
-  await portal.goto("/portal/checklist");
-  await expect(
-    portal.locator("li", { hasText: "Prior-year Notice of Assessment" }).getByText("We have it")
-  ).toBeVisible();
+  // The item is checked off once the background scan (M5, ADR-0021)
+  // promotes the file — reload until the job lands.
+  await expect(async () => {
+    await portal.goto("/portal/checklist");
+    await expect(
+      portal.locator("li", { hasText: "Prior-year Notice of Assessment" }).getByText("We have it")
+    ).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 60_000 });
   await client.close();
 
   // ...and staff see a vaulted portal upload on Ruth's page. (The checklist
   // row also mentions the filename — filter to the Documents-card row.)
-  await page.goto(`/app/clients/${RUTH_ID}`);
-  const docRow = page.locator("li", { hasText: "noa-ruth.pdf" }).filter({ hasText: "In vault" });
-  await expect(docRow).toBeVisible();
-  await expect(docRow.getByText("Portal", { exact: true })).toBeVisible();
+  await expect(async () => {
+    await page.goto(`/app/clients/${RUTH_ID}`);
+    const docRow = page.locator("li", { hasText: "noa-ruth.pdf" }).filter({ hasText: "In vault" });
+    await expect(docRow).toBeVisible({ timeout: 5_000 });
+    await expect(docRow.getByText("Portal", { exact: true })).toBeVisible();
+  }).toPass({ timeout: 60_000 });
 });
 
 test("revoking a link kills the live portal session; org-2 links are invisible", async ({

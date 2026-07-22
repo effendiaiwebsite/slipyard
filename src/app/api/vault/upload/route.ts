@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { staffApiContext } from "@/lib/context";
-import { applyAutoAdvance } from "@/lib/checklists";
-import { scanAndRouteDocument } from "@/lib/documents";
+import { enqueueDocumentScan, runDocumentScanJob } from "@/lib/jobs";
 import { env, features } from "@/lib/env";
 import { authorize, PermissionError, ReadOnlyOrgError } from "@/lib/permissions";
 import {
@@ -14,13 +13,15 @@ import {
 } from "@/lib/storage";
 
 /**
- * Document upload (M3, ADR-0016): multipart POST proxied through the app —
- * at /api/vault/upload; NOTE the path deliberately avoids the earlier
- * /api/documents/upload, which the dev machine's antivirus (Norton)
- * blacklisted after EICAR test uploads — see TESTING.md.
- * bytes land in org/{orgId}/quarantine/, get scanned synchronously, and are
- * promoted to the vault (or flagged) before the response returns. Reads
- * never come back through here (presigned GET).
+ * Document upload (M3, ADR-0016; async scan M5, ADR-0021): multipart POST
+ * proxied through the app — at /api/vault/upload; NOTE the path deliberately
+ * avoids the earlier /api/documents/upload, which the dev machine's
+ * antivirus (Norton) blacklisted after EICAR test uploads — see TESTING.md.
+ * Bytes land in org/{orgId}/quarantine/ and the response returns as soon as
+ * they're locked there; the ClamAV scan runs in a pg-boss job which promotes
+ * to the vault (or flags) and then satisfies any checklist slot. Callers
+ * poll /api/vault/scan-status. Reads never come back through here
+ * (presigned GET).
  *
  * Fields: file, clientId, engagementId?, checklistItemId?.
  * Plain upload (intake) needs documents.intake_upload; uploading straight
@@ -159,17 +160,20 @@ export async function POST(request: Request) {
   await putObject(key, bytes, file.type);
   doc = (await ctx.scope.updateDocument(doc.id, { s3Key: key })) ?? doc;
 
-  doc = await scanAndRouteDocument(ctx.scope, doc, bytes);
-
-  // Only a clean file can occupy a checklist slot.
-  let autoAdvancedTo: string | null = null;
-  if (doc.status === "clean" && checklistItem) {
-    await ctx.scope.updateChecklistItem(checklistItem.id, {
-      status: "received",
-      documentId: doc.id,
-    });
-    const advance = await applyAutoAdvance(ctx.scope, checklistItem.engagementId);
-    if (advance.moved) autoAdvancedTo = advance.toStageLabel;
+  // ADR-0021: hand the scan to the job runner and return. Checklist
+  // satisfaction + auto-advance happen in the job on a clean verdict. When
+  // the runner is off (JOBS_ENABLED=false, tests) fall back to the M3
+  // synchronous path via the same job body.
+  const scanJob = {
+    orgId: ctx.orgId,
+    documentId: doc.id,
+    checklistItemId: checklistItem?.id ?? null,
+  };
+  if (!(await enqueueDocumentScan(scanJob))) {
+    // The job body throws on scan_failed to drive pg-boss retries; inline,
+    // the row already carries that status — nothing more to do.
+    await runDocumentScanJob(scanJob).catch(() => {});
+    doc = (await ctx.scope.getDocument(doc.id)) ?? doc;
   }
 
   return NextResponse.json({
@@ -177,6 +181,5 @@ export async function POST(request: Request) {
     status: doc.status,
     // Signature name is safe to show staff; bytes are locked in quarantine.
     scanResult: doc.status === "infected" ? doc.scanResult : undefined,
-    autoAdvancedTo,
   });
 }

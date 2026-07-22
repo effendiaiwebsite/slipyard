@@ -296,7 +296,17 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               <dl className="space-y-2.5 text-sm">
                 <Row label="Preferred">{CHANNEL_LABELS[c.preferredChannel]}</Row>
                 <Row label="Email">{c.email ?? "—"}</Row>
-                <Row label="Phone">{c.phone ?? "—"}</Row>
+                <Row label="Phone">
+                  {c.phone ?? "—"}
+                  {c.smsOptOutAt && (
+                    <span
+                      className="ml-2 text-xs text-amber-700"
+                      title={`Texted STOP on ${new Date(c.smsOptOutAt).toLocaleDateString("en-CA")} — reminders and mass texts skip this number.`}
+                    >
+                      No texts (STOP)
+                    </span>
+                  )}
+                </Row>
                 <Row label="Address">
                   {[c.addressLine1, c.city, c.province, c.postalCode].filter(Boolean).join(", ") || "—"}
                 </Row>

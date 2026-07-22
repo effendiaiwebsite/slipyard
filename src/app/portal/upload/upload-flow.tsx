@@ -84,7 +84,7 @@ export function UploadFlow({
       received: {
         title: "We got it — thank you!",
         body: item
-          ? `“${item.title}” is now checked off your list.`
+          ? `“${item.title}” is on its way to your accountant.`
           : "Your document is safely in your accountant's hands.",
       },
       rejected: {

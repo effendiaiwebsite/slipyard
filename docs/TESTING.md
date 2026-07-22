@@ -192,3 +192,50 @@ server log). Consequences:
 ## Priority areas (spec §1)
 Tenancy isolation · permissions · tokens · presign (M3) · Stripe webhooks
 (M1). Every milestone adds its rows here with evidence.
+
+## Automated coverage (M5)
+- `tests/messaging.test.ts` — template rendering (substitution, empty and
+  unknown placeholders reported; editor validation via
+  findUnknownVariables); channel resolution + consent (preferred-channel
+  fallbacks; opted-out SMS never chosen even when requested; opt-out vs
+  no-address skip reasons); sendClientMessage side effects on the console
+  adapter (message + outbox + contact-timeline rows on success; skipped row
+  with NO outbox/timeline rows for an opted-out SMS); reminder sweep
+  (nudges exactly the missing REQUIRED items of awaiting_docs-category
+  engagements, once per cadence window; ignores other categories,
+  optional-only gaps, unreachable clients — silently; audited as system
+  messages.reminder_sent); reminderSettings() defaults keep pre-M5 orgs
+  disabled; Twilio signature compute/validate + keyword classification;
+  findClientsByPhone crosses orgs via the client_by_phone policy; RLS on
+  message_template/message (scope isolation + raw app-role SQL sees zero
+  rows without a GUC).
+- `e2e/m5.spec.ts` — Settings → Templates: seeded defaults render, a
+  template body with a typo'd placeholder is rejected with the exact
+  variable named, corrected version saves. Mass send: clerk selects all
+  active clients on an email template → action reports queued/skipped
+  split → message-send jobs drain to Sent in the log → skipped rows read
+  "no usable address" → recipient's contact timeline shows the send.
+  **ACCEPTANCE**: with the policy enabled in the UI (3 days / cadence 3 /
+  preferred channel) the pg-boss reminders-sweep — firing on its own on
+  the dev interval, no manual trigger — nudges Ruth's long-waiting return
+  exactly once (12 s of further sweeps add nothing), visible in the send
+  log ("Automatic"), the outbox (subject + missing items in the body), and
+  the contact timeline; policy is then switched back off. STOP consent:
+  the client record shows "No texts (STOP)" and the composer marks the
+  client "opted out of texts" on an SMS template.
+- Async-scan fallout (ADR-0021) covered by adaptation: m3/m4 upload
+  assertions now tolerate the background verdict (poll/reload windows) —
+  they still assert the same end states against the REAL dev bucket +
+  clamd.
+
+## Manual checklist — M5 (pending Twilio/SES credentials)
+With real keys in .env (TWILIO_* trio; EMAIL_MODE=ses + verified
+SES_FROM_ADDRESS):
+1. Messaging → mass send an SMS template to a test client whose phone is
+   YOUR handset → text arrives; outbox row shows provider=twilio + SID.
+2. Same with an email template → arrives from the SES sender.
+3. Text STOP back to the Twilio number (webhook configured to
+   {APP_URL}/api/webhooks/twilio, tunnel in dev) → client shows
+   "No texts (STOP)", contact log entry appears; next SMS send skips with
+   "opted out of texts". Text START → tag clears.
+4. Reminder policy on with a due return → real SMS/email nudge arrives.

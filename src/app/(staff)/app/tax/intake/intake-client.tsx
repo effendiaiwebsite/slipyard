@@ -59,13 +59,37 @@ export function IntakeUploadForm({ clients }: { clients: ClientOption[] }) {
       fd.set("file", file);
       fd.set("clientId", clientId);
       const res = await fetch("/api/vault/upload", { method: "POST", body: fd });
-      const body = (await res.json()) as { error?: string; status?: string; scanResult?: string };
+      const body = (await res.json()) as {
+        error?: string;
+        documentId?: string;
+        status?: string;
+        scanResult?: string;
+      };
       if (!res.ok) {
         setMsg(body.error ?? "Upload failed.");
-      } else if (body.status === "infected") {
-        setMsg(`Virus detected (${body.scanResult}) — the file was quarantined.`);
-      } else if (body.status === "scan_failed") {
+        router.refresh();
+        return;
+      }
+      // Scan runs in a background job (M5, ADR-0021) — poll for the verdict.
+      let status = body.status ?? "pending_scan";
+      let scanResult = body.scanResult;
+      if (status === "pending_scan" && body.documentId) {
+        for (let i = 0; i < 15 && status === "pending_scan"; i++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          const poll = await fetch(`/api/vault/scan-status?id=${body.documentId}`).catch(() => null);
+          if (!poll?.ok) break;
+          const verdict = (await poll.json()) as { status: string; scanResult?: string };
+          status = verdict.status;
+          scanResult = verdict.scanResult;
+        }
+      }
+      if (status === "infected") {
+        setMsg(`Virus detected (${scanResult}) — the file was quarantined.`);
+      } else if (status === "scan_failed") {
         setMsg("Uploaded, but the scanner was unavailable — retry from the queue.");
+      } else if (status === "pending_scan") {
+        setMsg("Uploaded — the virus scan is still running; refresh in a moment.");
+        if (fileRef.current) fileRef.current.value = "";
       } else {
         setMsg("Received and scanned clean — it's in the queue below.");
         if (fileRef.current) fileRef.current.value = "";

@@ -78,14 +78,31 @@ revocable → /join/[token] validates via the token-hash GUC policy
 (email must match) → acceptInvitation transaction (membership + stamp +
 audit) → seat quantity syncs → forced TOTP → personal dashboard.
 
-**Document upload (M3, ADR-0016)** — browser → multipart POST
-/api/vault/upload (same-origin enforced; type allowlist + 25 MB cap) →
-bytes land at `org/{orgId}/quarantine/{docId}/` → synchronous ClamAV
-INSTREAM scan → clean: promoted to `org/{orgId}/vault/{docId}/` · infected:
-stays quarantined, flagged, never downloadable · scanner down: scan_failed,
-retryable. Uploading against a checklist item marks it received and runs
-the auto-advance rules (category-keyed, ADR-0017). Reads via 5-min presigned
-GET, clean documents only. pg-boss takes over scanning at M5.
+**Document upload (M3 ADR-0016; async scan M5 ADR-0021)** — browser →
+multipart POST /api/vault/upload (same-origin enforced; type allowlist +
+25 MB cap) → bytes land at `org/{orgId}/quarantine/{docId}/` → the request
+returns; a pg-boss `document-scan` job runs ClamAV INSTREAM → clean:
+promoted to `org/{orgId}/vault/{docId}/`, checklist slot satisfied,
+auto-advance (category-keyed, ADR-0017) · infected: stays quarantined,
+flagged, never downloadable · scanner down: scan_failed, job retries ×3,
+retryable by staff after. Staff UIs poll /api/vault/scan-status for the
+verdict; the portal answers "received" immediately (flagged files surface
+to staff, not the client). Reads via 5-min presigned GET, clean documents
+only. Runner off ⇒ the routes run the same job body synchronously.
+
+**Messaging (M5, ADR-0022)** — templates ({placeholders}, Settings →
+Templates) render per recipient; every client-facing send goes through
+src/lib/client-messaging.ts: channel resolution (preferred → fallback) +
+SMS consent (client.sms_opt_out_at) → a `message` send-log row per
+recipient (skips included) → the outbox row → the env-gated adapter
+(Twilio REST / SES; console+outbox in dev) → contact-timeline entry. Mass
+sends fan out through `message-send` jobs; reminder policies (org.settings,
+category-keyed like all automations) run in the `reminders-sweep` job —
+pg-boss cron (prod) or a seconds-scale interval (dev/test, the accelerated
+clock). Provider sends never auto-retry. Inbound Twilio STOP/START
+(signature-validated webhook) flips consent for every org holding that
+phone. The job runner starts with the Next server (src/instrumentation.ts);
+queue state lives in the crm_app-owned `pgboss` schema.
 
 **Portal magic link (M4, ADR-0018)** — staff issue a link from the client
 detail page (portal.manage_links; clerk-friendly, ADR-0019) → SMS/email

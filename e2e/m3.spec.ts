@@ -41,7 +41,9 @@ test("upload → scan → checklist → auto-advance, end to end on one client",
     await t4Row.locator('input[type="file"]').setInputFiles(
       pdfFile("t4-dmitri.pdf", "fictional T4 for Dmitri Volkov")
     );
-    await expect(t4Row.getByText("Received")).toBeVisible({ timeout: 10_000 });
+    // M5: the scan runs in a background job — the upload hook polls the
+    // verdict, then refreshes; allow the round trip before re-uploading.
+    await expect(t4Row.getByText("Received")).toBeVisible({ timeout: 25_000 });
   }).toPass({ timeout: 90_000 });
 
   // The uploaded file shows in the Documents card as vaulted.

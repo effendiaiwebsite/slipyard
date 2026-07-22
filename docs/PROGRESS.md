@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-22 (M4 complete)_
+_Last updated: 2026-07-22 (M5 complete — real-SMS live test pending Twilio creds)_
 
 ## DONE
 - **M0 — Foundation** (commit `M0: ...`): scaffold, RLS + OrgScope, better-auth
@@ -127,12 +127,91 @@ _Last updated: 2026-07-22 (M4 complete)_
     m4.spec.ts; axe wcag2a/aa/aaa + best-practice on every portal screen,
     zero violations). Production build verified.
 
+- **M5 — Messaging** (this commit):
+  - Schema + FORCEd RLS (0015/0016/0017): message_template (per-org, unique
+    name, channel-fixed after creation, archive/restore), message — the
+    send log: one row per intended CLIENT recipient (sent/failed/skipped +
+    skip_reason, ADR-0022), linked to outbox transport rows;
+    client.sms_opt_out_at consent stamp; GUC-as-credential policies
+    org_system_sweep + client_by_phone (ADR-0009 pattern); pgboss schema
+    owned by crm_app + database CREATE grant (0017).
+  - Template engine (src/lib/templates.ts): {client_name}/{first_name}/
+    {firm_name}/{tax_year}/{missing_docs}/{accountant_name}, literal
+    substitution only, unknown placeholders rejected in the editor and
+    reported by previews. 3 seeded defaults per org (bootstrap + seed).
+    Settings → Templates (messages.manage_templates): edit-in-place,
+    variable chips, archive/restore, + the reminder policy card
+    (org.update_settings).
+  - Real adapters behind the outbox (env-gated; outbox/console stays the
+    dev default): Twilio REST via fetch (15 s timeout), SES via
+    @aws-sdk/client-sesv2. Outbox row first (queued), provider flips
+    sent/failed + provider_message_id/error. No automatic retries — sends
+    aren't idempotent (ADR-0022). EMAIL_MODE=smtp validates but has no
+    adapter (falls back to outbox, warned).
+  - pg-boss 12 job runner (src/lib/jobs.ts, started once per server in
+    src/instrumentation.ts; JOBS_ENABLED=false opts out): document-scan
+    (ADR-0021 — upload requests now stop at quarantine; scan/promote/
+    checklist/auto-advance in the job; staff UIs poll
+    /api/vault/scan-status; portal answers "received" instantly),
+    message-send (mass-send transport, batch 10), reminders-sweep
+    (singleton; prod cron */5, dev/test interval REMINDER_SWEEP_INTERVAL_MS
+    default 5 s — the accelerated clock). Job-less contexts fall back to
+    the same job bodies synchronously.
+  - Reminders (src/lib/reminders.ts): "awaiting_docs-CATEGORY stage for
+    N days + required checklist items missing → nudge exactly those items"
+    — category-keyed only (ADR-0015/0017 posture), cadence-deduped via the
+    send log, silent skips (no row spam), degrade-to-no-op when the org
+    lacks a usable template/channel. Config in org.settings.reminders
+    (defaults: disabled/7 d/3 d/preferred — code-side, no backfill).
+  - Messaging page (/app/messaging, replaces the placeholder): mass-send
+    composer (stage-category/type/missing-docs filters, live preview with
+    per-recipient variables, reachability badges) → per-recipient message
+    rows + message-send jobs; send log table (statuses, skip reasons,
+    "Automatic" for system sends). Clerks may mass-send (matrix unchanged
+    since M0).
+  - Consent/STOP: Twilio inbound webhook /api/webhooks/twilio
+    (X-Twilio-Signature validated, keyword set mirrors Twilio's) flips
+    sms_opt_out_at across ALL orgs holding that phone (ADR-0022), audits as
+    actor client, and writes the contact timeline. Every SMS path checks
+    consent BEFORE any outbox row; staff see a "No texts (STOP)" tag on the
+    client. Seed: Hélène Desjardins is opted out.
+  - Every send (mass + reminder) lands on the client contact timeline;
+    reminders also audit as system messages.reminder_sent.
+  - Tests: 98 Vitest (17 new in messaging.test.ts — rendering, channel
+    resolution + consent, send-log side effects, sweep w/ cadence, Twilio
+    signature math, RLS) + 21 Playwright (4 new in m5.spec.ts, incl. the
+    ACCEPTANCE test: a scheduled reminder fires under the accelerated
+    clock via the real pg-boss sweep, exactly once, then policy off).
+    m3/m4 upload assertions adapted to the async verdict.
+
 ## IN PROGRESS
-- Nothing — stopped at the M4 boundary.
+- Nothing — stopped at the M5 boundary. **Flagging Satinder:** everything
+  is outbox-first and green; to light up real messaging I need (1) Twilio
+  SID + auth token + a Canadian number, (2) a VERIFIED SES sender address
+  (then EMAIL_MODE=ses). After keys land: send a real SMS + email via the
+  Messaging page, and point the Twilio number's inbound webhook at
+  {APP_URL}/api/webhooks/twilio to live-test STOP/START.
 
 ## KNOWN BUGS / LIMITATIONS
-- Scanning is synchronous in the upload request (ADR-0016) — acceptable at
-  25 MB/small-firm scale; moves to pg-boss at M5.
+- ~~Scanning is synchronous in the upload request~~ Moved to pg-boss at M5
+  (ADR-0021). Portal upload now answers instantly; the infected-file
+  outcome reaches STAFF (quarantined + Portal badge), not the client —
+  deliberate, documented in the ADR.
+- EMAIL_MODE=smtp has no adapter (SES is the real path) — falls back to
+  outbox with a warning. Build it only if a customer actually needs SMTP.
+- Mass send caps at 500 recipients per batch (composer + action) — fine for
+  the target firm size; chunking + a progress surface would come with a
+  bigger customer.
+- The reminder engine's {missing_docs} uses REQUIRED checklist items only
+  (mirrors auto-advance's completeness rule); optional-only gaps never
+  nudge. Deliberate — revisit only if Joey asks.
+- Reminder sends resolve the client's channel at send time; if a client has
+  neither a usable email nor consented SMS the nudge silently no-ops (no
+  skip rows from sweeps — ADR-0022). Staff still see gaps via the Returns
+  missing-docs view.
+- Twilio delivery-status callbacks (delivered/undelivered) aren't wired —
+  outbox rows show what the API accepted, not carrier delivery. Twilio's
+  console covers forensics until this matters.
 - KMS_KEY_ID intentionally empty in dev (S3 default encryption); real KMS
   key at production setup.
 - Host antivirus (Norton) can blacklist upload URLs after seeing EICAR-like
@@ -199,15 +278,18 @@ _Last updated: 2026-07-22 (M4 complete)_
 - AWS budget alarm skipped for now (new account on free credits with
   automatic credit-exhaustion notifications).
 
-## NEXT 3 CONCRETE STEPS (M5 — Messaging)
-1. message_template + message tables (RLS), template variables
-   ({client_name}, {missing_docs}, …), Settings → Templates
-   (messages.manage_templates); real Twilio + SES adapters behind the
-   existing outbox pattern (env-gated; outbox/console stays the dev mode).
-2. pg-boss (stack decision: from M5) — job runner wiring, reminder
-   policies keyed on stage CATEGORY (ADR-0015) + checklist state, e.g.
-   "awaiting_docs for N days → nudge missing items"; move document
-   scanning out of the upload request into a job (revisit of ADR-0016).
-3. Mass send (filtered client list → templated batch, per-recipient outbox
-   rows), consent/STOP handling for SMS, send log on the client contact
-   timeline. Accelerated-clock e2e proving a scheduled reminder fires.
+## NEXT 3 CONCRETE STEPS (M6 — E-signature)
+0. (Carry-over from M5, blocked on Satinder: wire real Twilio + SES creds
+   into .env, live-test one SMS + one email + STOP via the webhook.)
+1. Signature request schema + RLS (document link, signer, placement coords,
+   status lifecycle draft→sent→viewed→signed→declined), T183-style PDF
+   field placement UI, hashed signing tokens reusing the portal-token
+   pattern (ADR-0003/0018).
+2. Remote signing flow through the portal theme (big-type AAA), in-person
+   signing mode on a staff device; signature stamping onto the PDF with the
+   CRA-required timestamp format; executed PDF immutable in the vault
+   (never overwrite the original).
+3. Audit page per signature (who/when/IP chain), dashboards ("out for
+   signature" via awaiting_signature category), notifications through the
+   M5 messaging layer (outbox-first), Playwright covering
+   draft→sent→signed with a correct timestamp and immutability probe.
