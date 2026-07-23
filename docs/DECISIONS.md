@@ -226,3 +226,64 @@ nothing without the client's own OTP, and sends are template-based + logged
 + consent-aware (STOP). Contrast ADR-0004: this WIDENS clerk visibility to
 all clients while NARROWING accountants to assigned-only — different roles,
 different jobs. No matrix change needed; this blesses the existing rules.
+
+## ADR-0024 (2026-07-22) — pdf-lib for signature stamping (new dependency)
+M6 needs to read a PDF's page geometry and write a signature image + a CRA
+timestamp + an appended audit page onto it, then emit a new file. The stack
+list (CLAUDE.md) named no PDF library, so per the iron rule this ADR records
+the choice: **pdf-lib** — pure TypeScript, zero native deps, runs in the Node
+server runtime (no rasterizer, no headless browser, no CSP-sensitive worker),
+and only ever APPENDS/overlays (it never rewrites the source object). Standard
+fonts only (Helvetica / Times-Italic for typed signatures), so no fontkit and
+no embedded-font licensing. Rejected: pdfkit (generate-only, can't load an
+existing form), HummusJS/muhammara (native build), server-side rasterizers
+(no headless Chrome in this deployment). The one thing pdf-lib does NOT give
+us is client-side visual rendering of the PDF for the placement UI — see
+ADR-0025 for how placement avoids needing it.
+
+## ADR-0025 (2026-07-22) — Field placement on aspect-true page boxes; no in-browser PDF renderer
+The T183-style placement UI lets staff drop signature/date fields onto the
+PDF. Rendering PDF *pixels* in the browser would mean pdf.js — a heavy
+dependency with a worker + eval/CSP friction (we already narrowly extended CSP
+for OpenCV, ADR-0020, and don't want to widen it again). Instead: the server
+reads each page's real dimensions with pdf-lib and the placement editor draws
+an **aspect-ratio-accurate page box** per page; staff click/drag to place
+fields, stored as NORMALISED coordinates ({page, xPct, yPct, wPct, hPct},
+top-left origin) that survive any later scaling and convert cleanly to
+pdf-lib's bottom-left origin at stamp time. The actual PDF is shown alongside
+in a native `<object>` viewer (inline presigned GET) for reference. This is
+dependency-light, CSP-safe, fully unit-testable (coordinates are pure math),
+and adequate for the standard one/two-page CRA forms this firm signs. A
+pixel-accurate drag-on-the-rendered-page overlay is logged as M10 polish.
+
+## ADR-0026 (2026-07-22) — Remote signing reuses the portal session + a 'sign' scope; no signing-token table
+Signing-token infra would duplicate portal-tokens.ts. Instead remote signing
+lives INSIDE the existing portal session (ADR-0018): the client opens their
+magic link, clears the SMS OTP, and the "Sign a form" card lists their pending
+requests. A request is signable only when the session token carries the 'sign'
+scope AND the request's client is inside the token's client/household scope —
+exactly the check portal uploads already do. New portal links therefore mint
+scopes ['view','upload','sign'] by default (the link already grants full
+document read/upload to the same person behind the same OTP — signing is
+within that trust boundary); pre-M6 links without 'sign' simply show a "your
+accountant will send you a new link" note. The OTP-verified portal token id +
+IP are recorded on the signature as the authentication event. In-person
+signing skips all of this: it happens in the authenticated STAFF session on
+the firm's own device, and records the operating staff user + IP + method.
+
+## ADR-0027 (2026-07-22) — Executed PDF is a new immutable object; sending advances the engagement by category
+The source PDF is never mutated or overwritten (iron rule + 7-year retention
+posture): stamping produces a NEW object at org/{orgId}/signed/{docId}/ and a
+NEW document row with source 'esign_executed', status 'clean' (we generated it
+from a vault-clean source + an embedded PNG; it never touches the ClamAV
+pipeline). It inherits the vault's no-delete stance, so the executed record is
+immutable end-to-end. Notifications go through the M5 client-messaging layer
+(outbox-first, consent-aware). "Out for signature" is driven two ways that
+agree: the e-sign page lists signature_requests by their own status
+(draft/sent/viewed/signed/declined), and — because automations may key only on
+stage CATEGORY (ADR-0015/0017) — SENDING a request also advances any linked
+engagement FORWARD to the first awaiting_signature-category stage (forward-only,
+no-op if the pipeline has no such category or the engagement is already at/past
+it, audited actor_type=system action esign.stage_advanced). Signing does NOT
+auto-transition further; staff move to filed themselves (ADR-0013's manual
+any→any stance holds).

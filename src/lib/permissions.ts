@@ -45,6 +45,9 @@ export const ACTIONS = [
   "documents.manage",
   // portal (M4): issue/revoke client magic links
   "portal.manage_links",
+  // e-signature (M6): view the section; create/send/cancel requests
+  "signatures.view",
+  "signatures.manage",
   // messaging
   "messages.send_templated",
   "messages.manage_templates",
@@ -79,6 +82,8 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "documents.intake_upload": "allow",
     "documents.manage": "allow",
     "portal.manage_links": "allow",
+    "signatures.view": "allow",
+    "signatures.manage": "allow",
     "messages.send_templated": "allow",
     "messages.manage_templates": "allow",
     "messages.send_custom": "allow",
@@ -103,6 +108,8 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "documents.intake_upload": "allow",
     "documents.manage": "allow",
     "portal.manage_links": "allow",
+    "signatures.view": "allow",
+    "signatures.manage": "allow",
     "messages.send_templated": "allow",
     "messages.manage_templates": "allow",
     "messages.send_custom": "allow",
@@ -127,6 +134,8 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "documents.intake_upload": "allow",
     "documents.manage": "assigned",
     "portal.manage_links": "assigned",
+    "signatures.view": "allow",
+    "signatures.manage": "assigned",
     "messages.send_templated": "allow",
     "messages.manage_templates": "deny",
     "messages.send_custom": "assigned",
@@ -151,6 +160,8 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "documents.intake_upload": "allow",
     "documents.manage": "deny",
     "portal.manage_links": "allow",
+    "signatures.view": "allow",
+    "signatures.manage": "deny",
     "messages.send_templated": "allow",
     "messages.manage_templates": "deny",
     "messages.send_custom": "deny",
@@ -184,6 +195,7 @@ const GRACE_MODE_ALLOWED: ReadonlySet<Action> = new Set<Action>([
   "clients.view",
   "engagements.view",
   "documents.view",
+  "signatures.view",
   "audit.view",
   "billing.manage",
 ]);

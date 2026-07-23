@@ -78,6 +78,11 @@ export function vaultKey(orgId: string, documentId: string, filename: string): s
   return `org/${orgId}/vault/${documentId}/${filename}`;
 }
 
+/** Executed e-signature PDFs (M6) — immutable, generated internally. */
+export function signedKey(orgId: string, documentId: string, filename: string): string {
+  return `org/${orgId}/signed/${documentId}/${filename}`;
+}
+
 /** KMS in production when configured; dev bucket relies on default encryption. */
 function encryptionParams() {
   return env.KMS_KEY_ID
@@ -137,6 +142,28 @@ export async function presignDownloadUrl(
       Bucket: bucket(),
       Key: key,
       ResponseContentDisposition: `attachment; filename="${sanitizeFilename(filename)}"`,
+      ResponseContentType: contentType,
+    }),
+    { expiresIn: 300 }
+  );
+}
+
+/**
+ * 5-minute presigned GET with an INLINE disposition — for viewing a source
+ * PDF in the browser (the e-sign placement editor + the signing surface),
+ * not downloading it. Same status='clean' gating applies at the call site.
+ */
+export async function presignInlineUrl(
+  key: string,
+  filename: string,
+  contentType: string
+): Promise<string> {
+  return getSignedUrl(
+    s3(),
+    new GetObjectCommand({
+      Bucket: bucket(),
+      Key: key,
+      ResponseContentDisposition: `inline; filename="${sanitizeFilename(filename)}"`,
       ResponseContentType: contentType,
     }),
     { expiresIn: 300 }

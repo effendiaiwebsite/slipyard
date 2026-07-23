@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { hashPassword } from "better-auth/crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { Pool } from "pg";
 import { encryptField } from "../src/lib/crypto";
 import { DEFAULT_MESSAGE_TEMPLATES } from "../src/lib/templates";
@@ -531,6 +532,68 @@ async function main() {
     },
   ]);
 
+  // ---- M6: e-signature -------------------------------------------------------
+  // A REAL one-page PDF (built with pdf-lib) so the request is genuinely
+  // signable in dev — the "T4" fixtures above are plain text. One request is
+  // out for signature (dashboard "Out for signature"), one is a draft.
+  const esignDocId = "d0c00001-0000-4000-8000-0000000000e1";
+  const engagementLetter = await buildEngagementLetterPdf();
+  await db.insert(schema.document).values({
+    id: esignDocId,
+    orgId: SEED.org1,
+    clientId: c.ruth,
+    engagementId: eng(5),
+    filename: "Engagement letter - Ruth Okafor 2025.pdf",
+    contentType: "application/pdf",
+    sizeBytes: engagementLetter.byteLength,
+    s3Key: `org/${SEED.org1}/vault/${esignDocId}/Engagement letter - Ruth Okafor 2025.pdf`,
+    status: "clean",
+    scannedAt: new Date("2026-07-18T15:00:00Z"),
+    source: "staff_upload",
+    uploadedBy: u.sam,
+  });
+  if (features.s3) {
+    await putObject(
+      `org/${SEED.org1}/vault/${esignDocId}/Engagement letter - Ruth Okafor 2025.pdf`,
+      Buffer.from(engagementLetter),
+      "application/pdf"
+    );
+  }
+
+  const signaturePlacement = [
+    { id: "sig1", page: 0, xPct: 0.12, yPct: 0.8, wPct: 0.3, hPct: 0.06, kind: "signature" as const },
+    { id: "dt1", page: 0, xPct: 0.62, yPct: 0.8, wPct: 0.2, hPct: 0.035, kind: "date" as const },
+  ];
+  await db.insert(schema.signatureRequest).values([
+    {
+      id: "e519a7e0-0000-4000-8000-000000000001",
+      orgId: SEED.org1,
+      clientId: c.ruth,
+      documentId: esignDocId,
+      engagementId: eng(5),
+      title: "Engagement letter 2025",
+      mode: "remote",
+      status: "sent",
+      signerName: "Ruth Okafor",
+      signerEmail: "ruth.okafor@example.test",
+      placements: signaturePlacement,
+      createdBy: u.sam,
+      sentAt: new Date("2026-07-21T14:00:00Z"),
+    },
+    {
+      id: "e519a7e0-0000-4000-8000-000000000002",
+      orgId: SEED.org1,
+      clientId: c.marc,
+      documentId: "d0c00001-0000-4000-8000-000000000002",
+      title: "Bank authorization",
+      mode: "in_person",
+      status: "draft",
+      signerName: "Marc Desjardins",
+      placements: [],
+      createdBy: u.joey,
+    },
+  ]);
+
   await db.insert(schema.auditLog).values({
     orgId: SEED.org1,
     actorType: "system",
@@ -542,10 +605,36 @@ async function main() {
 
   await pool.end();
 
-  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements, 6 documents, 11 checklist items, 3 portal tokens, 6 message templates.");
+  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements, 7 documents, 11 checklist items, 3 portal tokens, 6 message templates, 2 signature requests.");
   console.log("Dev logins (all password: %s):", SEED.password);
   for (const s of staff) console.log(`  ${s.role.padEnd(10)} ${s.email}  (${s.orgId === SEED.org1 ? "Lakeside CPA" : "Northern Tax"})`);
   console.log("First login will require TOTP enrollment (mandatory 2FA).");
+}
+
+/** A tiny but valid single-page PDF engagement letter — real bytes so the
+ *  seeded signature request is genuinely signable in dev. */
+async function buildEngagementLetterPdf(): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([612, 792]);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const draw = (text: string, x: number, y: number, size = 11, f = font) =>
+    page.drawText(text, { x, y, size, font: f, color: rgb(0.1, 0.12, 0.18) });
+  draw("Lakeside CPA", 56, 720, 18, bold);
+  draw("Engagement letter — 2025 personal tax return", 56, 694, 13, bold);
+  draw("Client: Ruth Okafor", 56, 660);
+  draw(
+    "This letter confirms the terms under which Lakeside CPA will prepare your",
+    56,
+    632
+  );
+  draw("2025 T1 personal income tax return. (Fictional seed document.)", 56, 616);
+  draw("Please sign below to confirm you agree to these terms.", 56, 588);
+  draw("Signature:", 56, 170, 11, bold);
+  draw("Date:", 380, 170, 11, bold);
+  page.drawLine({ start: { x: 56, y: 150 }, end: { x: 320, y: 150 }, thickness: 1, color: rgb(0.6, 0.62, 0.68) });
+  page.drawLine({ start: { x: 380, y: 150 }, end: { x: 540, y: 150 }, thickness: 1, color: rgb(0.6, 0.62, 0.68) });
+  return pdf.save();
 }
 
 main().catch((e) => {

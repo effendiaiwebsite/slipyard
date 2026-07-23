@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-22 (M5 complete — real-SMS live test pending Twilio creds)_
+_Last updated: 2026-07-23 (M6 e-signature complete — 112 Vitest / 23 Playwright green)_
 
 ## DONE
 - **M0 — Foundation** (commit `M0: ...`): scaffold, RLS + OrgScope, better-auth
@@ -184,13 +184,65 @@ _Last updated: 2026-07-22 (M5 complete — real-SMS live test pending Twilio cre
     clock via the real pg-boss sweep, exactly once, then policy off).
     m3/m4 upload assertions adapted to the async verdict.
 
+- **M6 — E-signature** (this commit):
+  - New dependency: **pdf-lib** (ADR-0024) — pure-JS PDF read/stamp, no native
+    deps, no rasterizer, no CSP-sensitive worker.
+  - Schema + FORCEd RLS (0019/0020): signature_request — single-signer envelope
+    (client + source document + optional engagement, draft→sent→viewed→signed/
+    declined/canceled, jsonb `placements` as normalised {page,x,y,w,h,kind}
+    coords, snapshotted signer, source/signed sha256 hashes, signed via/method/
+    ip/token/staff for the audit page). document_source enum gains
+    'esign_executed'. OrgScope: create/get/update, listSignatureRequests
+    (+ assigned scoping), listPendingSignatureRequestsForClients (portal),
+    countOpenSignatureRequests (dashboard).
+  - PDF engine (src/lib/pdf.ts): `formatCraTimestamp` (CRA
+    `YYYY/MM/DD HH:MM:SS`, org TZ, 24h), `hashBytes`, `readPdfPageSizes`,
+    `stampSignature` — embeds the drawn PNG or typed name into every placed
+    field (top-left → pdf-lib bottom-left conversion in one place), renders
+    date fields with the timestamp, and APPENDS an audit page (signer, method,
+    authentication, IP, token/operator, source hash, request id). Never
+    mutates the source buffer.
+  - Orchestration (src/lib/esign.ts): send (hash source, notify signer via M5
+    messaging outbox-first, advance the linked engagement to the first
+    awaiting_signature-category stage — forward-only, ADR-0027), execute (stamp
+    → store a NEW immutable doc under org/{orgId}/signed/ source
+    'esign_executed', mark signed, contact log + audit), view/decline/cancel.
+    Shared mark validation/decoding (`signatureMarkSchema`/`decodeSignatureMark`).
+  - Permissions: `signatures.view` (all roles; assigned-only accountants scoped
+    on list/detail) + `signatures.manage` (owner/admin allow, accountant
+    assigned, clerk deny). view is grace-mode allowed.
+  - Staff UI: /app/esign dashboard (open vs settled); "Request signature" on
+    clean PDF rows of a client's Documents card → /app/esign/[id] draft editor
+    (aspect-true page boxes, click-to-place + drag signature/date/initials
+    fields, ADR-0025; "View the form" opens the PDF inline) → send remotely or
+    "Sign in person now"; in-person signing surface (/app/esign/[id]/sign) with
+    the shared SignaturePad (draw or type); status timeline, signed-PDF
+    download, per-signature audit summary. Dashboard "Out for signature" card
+    wired to the real open count.
+  - Portal (AAA, ADR-0026): remote signing lives in the portal session — new
+    links mint scopes ['view','upload','sign']; the "Sign a form" card lists
+    pending requests; /portal/sign/[id] is a one-action-per-screen flow (read
+    the form → draw/type → sign & send, or decline) with big targets. The
+    OTP-verified portal token id + IP are the recorded authentication.
+  - Seed: a REAL one-page engagement-letter PDF (pdf-lib) for Ruth + a "sent"
+    request with placed fields (dashboard/in-person demo) and a draft request
+    for Marc.
+  - Tests: 112 Vitest (14 new in esign.test.ts — CRA timestamp, hashing,
+    stamp + immutability, mark decode, category-advance, execute writes a new
+    immutable signed doc, RLS isolation, permission matrix) + 23 Playwright
+    (2 new in m6.spec.ts: create→place→send, and the ACCEPTANCE in-person
+    draft→sent→signed with an immutable executed PDF in signed/).
+
 ## IN PROGRESS
-- Nothing — stopped at the M5 boundary. **Flagging Satinder:** everything
-  is outbox-first and green; to light up real messaging I need (1) Twilio
-  SID + auth token + a Canadian number, (2) a VERIFIED SES sender address
-  (then EMAIL_MODE=ses). After keys land: send a real SMS + email via the
-  Messaging page, and point the Twilio number's inbound webhook at
-  {APP_URL}/api/webhooks/twilio to live-test STOP/START.
+- Nothing — stopped at the M6 boundary. Next milestone is M7 (CRA
+  authorizations, AFR reconciliation, basic time & billing, reporting).
+- **Flagging Satinder (M6 real-device checks, optional):** the whole flow is
+  proven in e2e (in-person draft→sent→signed, immutable executed PDF). The
+  remaining human check is REMOTE signing on a real phone through a tunnel:
+  issue a portal link to a real handset, open it, and sign a form — the same
+  tunnel setup as the M4 run. Not required to close M6 (in-person is fully
+  covered); nice-to-have alongside the M7 work. `EMAIL_MODE=ses` + live Twilio
+  are already in `.env` from M5.
 
 ## KNOWN BUGS / LIMITATIONS
 - ~~Scanning is synchronous in the upload request~~ Moved to pg-boss at M5
@@ -254,7 +306,18 @@ _Last updated: 2026-07-22 (M5 complete — real-SMS live test pending Twilio cre
 - The magic-link JWT puts ~300 chars in the SMS URL; fine via outbox/Twilio
   segments, but a shortener-style compact token is an easy M5+ tweak if
   carriers mangle long links in practice.
-- Portal "Sign a form" card is a static placeholder until M6.
+- ~~Portal "Sign a form" card is a static placeholder until M6.~~ DONE (M6):
+  lists pending requests and drives remote signing in the portal session.
+- **E-sign field placement is on aspect-true page boxes, not a pixel-rendered
+  PDF (ADR-0025).** Adequate for the one/two-page CRA forms this firm signs; a
+  pixel-accurate drag-on-the-rendered-page overlay (pdf.js) is M10 polish. The
+  actual PDF opens in a tab for reference alongside the placement boxes.
+- **Signature reminders are manual** (staff re-open a sent request; there's no
+  automated "you haven't signed yet" sweep like the M5 doc reminders). Add a
+  category/age-keyed signing-reminder sweep if Joey asks — the plumbing
+  (message layer, awaiting_signature category) is already there.
+- **Executed PDFs have no delete path** (same 7-year retention posture as vault
+  docs) — deliberate; the M9 retention flow covers review/removal.
 - **Clerk (front-desk) dashboard is the personal/assigned-to-me variant, which
   reads mostly zero for clerks** (nothing is ever assigned to a clerk).
   Customer-noted 2026-07-22; logged for M10 polish. Their actual workflow
@@ -320,18 +383,18 @@ _Last updated: 2026-07-22 (M5 complete — real-SMS live test pending Twilio cre
 - AWS budget alarm skipped for now (new account on free credits with
   automatic credit-exhaustion notifications).
 
-## NEXT 3 CONCRETE STEPS (M6 — E-signature)
-0. (Carry-over from M5, blocked on Satinder: wire real Twilio + SES creds
-   into .env, live-test one SMS + one email + STOP via the webhook.)
-1. Signature request schema + RLS (document link, signer, placement coords,
-   status lifecycle draft→sent→viewed→signed→declined), T183-style PDF
-   field placement UI, hashed signing tokens reusing the portal-token
-   pattern (ADR-0003/0018).
-2. Remote signing flow through the portal theme (big-type AAA), in-person
-   signing mode on a staff device; signature stamping onto the PDF with the
-   CRA-required timestamp format; executed PDF immutable in the vault
-   (never overwrite the original).
-3. Audit page per signature (who/when/IP chain), dashboards ("out for
-   signature" via awaiting_signature category), notifications through the
-   M5 messaging layer (outbox-first), Playwright covering
-   draft→sent→signed with a correct timestamp and immutability probe.
+## NEXT 3 CONCRETE STEPS (M7 — CRA authorizations, AFR, time & billing, reporting)
+1. CRA authorization tracking (T1013/AuthRep-style): schema + RLS for a
+   client's authorization records (level, status, expiry), a coverage
+   dashboard, and the sidebar page at /app/tax/authorizations (currently a
+   placeholder). Acceptance: coverage dashboard is correct vs the seed.
+2. AFR (Auto-fill My Return) reconciliation: paste/import a CRA slip CSV and
+   compare against what's on file / entered, surfacing mismatches. Acceptance:
+   AFR compare works from a pasted CSV.
+3. Basic time & billing (the /app/billing page is a placeholder) + an invoice
+   PDF generator (reuse pdf-lib from M6). Acceptance: an invoice PDF
+   generates. Plus the reporting surface for the milestone.
+
+Handy M6 leftovers for M7: pdf-lib is now a dependency (invoices reuse it);
+the e-sign dashboard-card pattern (real count on the landing page) is the model
+for the authorization-coverage card.

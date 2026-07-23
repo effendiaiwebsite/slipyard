@@ -28,9 +28,14 @@
   in e2e (m5.spec.ts ACCEPTANCE test) 2026-07-22; real-SMS send pending
   Twilio credentials from Satinder — adapters are built and env-gated, see
   PROGRESS.md.)_
-- [ ] **M6 — E-signature.** Placement, remote + in-person, stamping + audit
+- [x] **M6 — E-signature.** Placement, remote + in-person, stamping + audit
   page, dashboards, notifications. ✅ T183-like PDF draft→sent→signed with
-  correct timestamp format; executed PDF immutable.
+  correct timestamp format; executed PDF immutable. _(pdf-lib stamping with
+  CRA `YYYY/MM/DD HH:MM:SS` timestamps + appended audit page; aspect-true field
+  placement (ADR-0025); remote signing in the portal session (scope 'sign',
+  ADR-0026) + in-person on staff device; executed PDF is a new immutable
+  object under signed/ (ADR-0027). draft→sent→signed + immutability proven in
+  e2e (m6.spec.ts), exact timestamp format in tests/esign.test.ts.)_
 - [ ] **M7 — CRA authorizations, AFR reconciliation, time & billing (basic),
   reporting.** ✅ Coverage dashboard correct vs seed; AFR compare works from
   pasted CSV; invoice PDF generates.

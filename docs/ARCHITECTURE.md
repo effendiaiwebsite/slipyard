@@ -118,9 +118,21 @@ source=portal_upload; jscanify (vendored, ADR-0020) straightens phone
 photos. Every anonymous endpoint is rate-limited per token + IP; every
 portal request re-loads the token row, so staff revocation is immediate.
 
-**Signing (M6)** — signature_pad → pdf-lib stamps signature + datetime
-(YYYY/MM/DD HH:MM:SS org TZ) + audit page (signer, method, IP, token id,
-source hash). Originals immutable.
+**Signing (M6, ADR-0024/25/26/27)** — staff create a signature_request from a
+clean vault PDF and place fields on aspect-true page boxes (normalised coords,
+no in-browser PDF renderer). Sending notifies the signer (M5 messaging,
+outbox-first) and advances the linked engagement to the first
+awaiting_signature-category stage (forward-only). The signer signs REMOTELY
+inside the portal session (scope 'sign' — the OTP-verified token is the
+authentication) or IN PERSON in the staff session on the firm's device. A
+shared signature pad captures a drawn PNG or a typed name; pdf-lib
+(src/lib/pdf.ts) stamps it + a CRA datetime (YYYY/MM/DD HH:MM:SS, org TZ) into
+every field and APPENDS an audit page (signer, method, authentication, IP,
+token id / operator, source SHA-256). The executed PDF is written as a NEW,
+immutable object at org/{orgId}/signed/ (document source 'esign_executed') —
+the source is never touched. "Out for signature" surfaces on /app/esign
+(by request status) and the dashboard card. Multiple signers = one request per
+client.
 
 **Stripe webhooks (M1)** — signature-verified, idempotent handlers for
 checkout.session.completed, customer.subscription.updated/deleted.

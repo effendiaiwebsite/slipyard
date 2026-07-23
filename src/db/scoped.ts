@@ -958,7 +958,7 @@ export class OrgScope {
     sizeBytes: number;
     s3Key: string;
     status?: "pending_scan" | "clean" | "infected" | "scan_failed";
-    source?: "staff_upload" | "portal_upload";
+    source?: "staff_upload" | "portal_upload" | "esign_executed";
     uploadedBy?: string | null;
   }) {
     return this.tx(async (tx) => {
@@ -1373,6 +1373,171 @@ export class OrgScope {
         .where(and(...conds))
         .groupBy(schema.engagement.stageId);
       return new Map(rows.map((r) => [r.stageId, r.count]));
+    });
+  }
+
+  // ---- signature requests (M6) ------------------------------------------------
+
+  async createSignatureRequest(fields: {
+    clientId: string;
+    documentId: string;
+    engagementId?: string | null;
+    title: string;
+    mode?: "remote" | "in_person";
+    signerName: string;
+    signerEmail?: string | null;
+    signerPhone?: string | null;
+    placements?: schema.FieldPlacement[];
+    createdBy?: string | null;
+  }) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.signatureRequest)
+        .values({ orgId: this.orgId, ...fields })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async getSignatureRequest(requestId: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.signatureRequest)
+        .where(
+          and(
+            eq(schema.signatureRequest.orgId, this.orgId),
+            eq(schema.signatureRequest.id, requestId)
+          )
+        );
+      return rows[0] ?? null;
+    });
+  }
+
+  async updateSignatureRequest(
+    requestId: string,
+    fields: Partial<{
+      title: string;
+      mode: "remote" | "in_person";
+      status: "draft" | "sent" | "viewed" | "signed" | "declined" | "canceled";
+      engagementId: string | null;
+      placements: schema.FieldPlacement[];
+      signerName: string;
+      signerEmail: string | null;
+      signerPhone: string | null;
+      sourceHash: string | null;
+      signedDocumentId: string | null;
+      signedHash: string | null;
+      signatureMethod: "drawn" | "typed" | null;
+      signedVia: string | null;
+      signedIp: string | null;
+      signedTokenId: string | null;
+      signedByStaffId: string | null;
+      declineReason: string | null;
+      sentAt: Date | null;
+      viewedAt: Date | null;
+      signedAt: Date | null;
+      declinedAt: Date | null;
+      canceledAt: Date | null;
+    }>
+  ) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.signatureRequest)
+        .set({ ...fields, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.signatureRequest.orgId, this.orgId),
+            eq(schema.signatureRequest.id, requestId)
+          )
+        )
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  /** E-sign dashboard: every request with signer/creator/document context. */
+  async listSignatureRequests(opts?: { assignedToId?: string }) {
+    return this.tx((tx) => {
+      const conds = [eq(schema.signatureRequest.orgId, this.orgId)];
+      // Assigned-only scoping mirrors clients.view: an accountant sees only
+      // requests for their own clients.
+      if (opts?.assignedToId) conds.push(eq(schema.client.assignedAccountantId, opts.assignedToId));
+      return tx
+        .select({
+          request: schema.signatureRequest,
+          clientName: schema.client.displayName,
+          documentName: schema.document.filename,
+          createdByName: schema.staffUser.name,
+        })
+        .from(schema.signatureRequest)
+        .innerJoin(schema.client, eq(schema.signatureRequest.clientId, schema.client.id))
+        .innerJoin(schema.document, eq(schema.signatureRequest.documentId, schema.document.id))
+        .leftJoin(schema.staffUser, eq(schema.signatureRequest.createdBy, schema.staffUser.id))
+        .where(and(...conds))
+        .orderBy(desc(schema.signatureRequest.createdAt));
+    });
+  }
+
+  async listSignatureRequestsForClient(clientId: string) {
+    return this.tx((tx) =>
+      tx
+        .select({
+          request: schema.signatureRequest,
+          documentName: schema.document.filename,
+          createdByName: schema.staffUser.name,
+        })
+        .from(schema.signatureRequest)
+        .innerJoin(schema.document, eq(schema.signatureRequest.documentId, schema.document.id))
+        .leftJoin(schema.staffUser, eq(schema.signatureRequest.createdBy, schema.staffUser.id))
+        .where(
+          and(
+            eq(schema.signatureRequest.orgId, this.orgId),
+            eq(schema.signatureRequest.clientId, clientId)
+          )
+        )
+        .orderBy(desc(schema.signatureRequest.createdAt))
+    );
+  }
+
+  /** Portal "Sign a form": pending (sent/viewed) requests for a set of clients. */
+  async listPendingSignatureRequestsForClients(clientIds: string[]) {
+    if (clientIds.length === 0) return [];
+    return this.tx((tx) =>
+      tx
+        .select({
+          request: schema.signatureRequest,
+          clientName: schema.client.displayName,
+          documentName: schema.document.filename,
+        })
+        .from(schema.signatureRequest)
+        .innerJoin(schema.client, eq(schema.signatureRequest.clientId, schema.client.id))
+        .innerJoin(schema.document, eq(schema.signatureRequest.documentId, schema.document.id))
+        .where(
+          and(
+            eq(schema.signatureRequest.orgId, this.orgId),
+            inArray(schema.signatureRequest.clientId, clientIds),
+            inArray(schema.signatureRequest.status, ["sent", "viewed"])
+          )
+        )
+        .orderBy(desc(schema.signatureRequest.createdAt))
+    );
+  }
+
+  /** Count of open (draft/sent/viewed) requests — dashboard card. */
+  async countOpenSignatureRequests(assignedToId?: string): Promise<number> {
+    return this.tx(async (tx) => {
+      const conds = [
+        eq(schema.signatureRequest.orgId, this.orgId),
+        inArray(schema.signatureRequest.status, ["draft", "sent", "viewed"]),
+      ];
+      if (assignedToId) conds.push(eq(schema.client.assignedAccountantId, assignedToId));
+      const rows = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(schema.signatureRequest)
+        .innerJoin(schema.client, eq(schema.signatureRequest.clientId, schema.client.id))
+        .where(and(...conds));
+      return rows[0]?.count ?? 0;
     });
   }
 }

@@ -82,6 +82,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       { ...clientResource, assignedTo: assignedTo ?? c.assignedAccountantId },
       ctx.orgSettings
     );
+  const canRequestSignature =
+    !ctx.readOnly && can(ctx.actor, "signatures.manage", clientResource, ctx.orgSettings);
   const members = memberships
     .filter((m) => m.membership.status === "active" && m.membership.role !== "clerk")
     .map((m) => ({ id: m.user.id, name: m.user.name }));
@@ -215,6 +217,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 clientId={c.id}
                 canUpload={canUploadDocs}
                 canManage={canManageDocs(null)}
+                canRequestSignature={canRequestSignature}
                 engagements={detail.engagements.map(({ engagement: e }) => ({
                   id: e.id,
                   label: engagementLabel.get(e.id) ?? "Engagement",
@@ -222,6 +225,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 docs={clientDocs.map(({ document: d, uploaderName }) => ({
                   id: d.id,
                   filename: d.filename,
+                  contentType: d.contentType,
                   status: d.status,
                   sizeBytes: d.sizeBytes,
                   createdAt: d.createdAt.toISOString(),

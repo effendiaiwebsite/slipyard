@@ -134,6 +134,20 @@
       "when": 1784770799458,
       "tag": "0018_m5b_accountant_scope_default",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784775127186,
+      "tag": "0019_m6_esign",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784775127187,
+      "tag": "0020_m6_rls",
+      "breakpoints": true
     }
   ]
 }

@@ -15,11 +15,12 @@ export default async function DashboardPage() {
 
   // Personal variant counts only what's assigned to the viewer.
   const mineOnly = firmWide ? undefined : ctx.user.id;
-  const [stages, byStage, clients, members] = await Promise.all([
+  const [stages, byStage, clients, members, openSignatures] = await Promise.all([
     ctx.scope.listStages(),
     ctx.scope.countEngagementsByStage(mineOnly),
     ctx.scope.listClientsWithMeta(mineOnly ? { assignedToId: mineOnly } : undefined),
     firmWide ? ctx.scope.listMemberships() : Promise.resolve(null),
+    ctx.scope.countOpenSignatureRequests(mineOnly),
   ]);
 
   // Category totals survive any stage customization (ADR-0015).
@@ -55,7 +56,6 @@ export default async function DashboardPage() {
 
   const upcoming = [
     { label: "Documents outstanding", milestone: "M3" },
-    { label: "Signatures pending", milestone: "M6" },
     { label: "Authorization coverage", milestone: "M7" },
   ];
 
@@ -120,6 +120,21 @@ export default async function DashboardPage() {
       </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Link href="/app/esign">
+          <Card className="hover:ring-2 hover:ring-indigo-200 transition h-full">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-slate-500 font-medium">
+                {firmWide ? "Out for signature" : "My out for signature"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold tabular-nums">{openSignatures}</div>
+              <Badge className="mt-2" variant="accent">
+                E-signatures
+              </Badge>
+            </CardContent>
+          </Card>
+        </Link>
         {upcoming.map((s) => (
           <Card key={s.label}>
             <CardHeader className="pb-2">

@@ -31,8 +31,14 @@ export const documentStatus = pgEnum("document_status", [
   "scan_failed",
 ]);
 
-/** Who put the bytes in: staff via the CRM, or (from M4) the client portal. */
-export const documentSource = pgEnum("document_source", ["staff_upload", "portal_upload"]);
+/** Who put the bytes in: staff via the CRM, the client portal (M4), or the
+ *  e-signature engine's stamped output (M6 — generated internally, never
+ *  scanned, lives under org/{orgId}/signed/). */
+export const documentSource = pgEnum("document_source", [
+  "staff_upload",
+  "portal_upload",
+  "esign_executed",
+]);
 
 export const document = pgTable(
   "document",

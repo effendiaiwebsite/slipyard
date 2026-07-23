@@ -70,7 +70,11 @@ export async function mintPortalLink(
 ): Promise<{ url: string; token: PortalTokenRow }> {
   const tokenId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + PORTAL_LINK_UNOPENED_TTL_MS);
-  const scopes = input.scopes ?? ["view", "upload"];
+  // New links can view, upload, AND sign by default (ADR-0026): the link
+  // already grants full document access to the same person behind the same
+  // OTP, so signing is within that trust boundary. Pre-M6 links (without
+  // 'sign') simply can't reach the signing surface.
+  const scopes = input.scopes ?? ["view", "upload", "sign"];
 
   const raw = await new SignJWT({
     org_id: scope.orgId,

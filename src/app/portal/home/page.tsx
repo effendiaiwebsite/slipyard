@@ -11,6 +11,9 @@ export const metadata = { title: "Your portal" };
 export default async function PortalHome() {
   const ctx = await requirePortal();
   const missingCount = await countMissing(ctx);
+  const pendingSignatures = ctx.scopes.includes("sign")
+    ? (await ctx.scope.listPendingSignatureRequestsForClients(ctx.clients.map((c) => c.id))).length
+    : 0;
 
   return (
     <div className="space-y-8">
@@ -44,7 +47,11 @@ export default async function PortalHome() {
           href="/portal/sign"
           icon={<PenLine className="h-8 w-8" aria-hidden />}
           title="Sign a form"
-          body="Nothing is waiting for your signature right now."
+          body={
+            pendingSignatures > 0
+              ? `${pendingSignatures} ${pendingSignatures === 1 ? "form is" : "forms are"} ready to sign.`
+              : "Nothing is waiting for your signature right now."
+          }
         />
       </nav>
     </div>

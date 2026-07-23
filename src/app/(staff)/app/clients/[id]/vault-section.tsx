@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileUp, ListChecks, RotateCw, Trash2, X } from "lucide-react";
+import { Download, FileUp, ListChecks, PenLine, RotateCw, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import {
   rescanDocument,
   setChecklistItemStatus,
 } from "../../documents/actions";
+import { createSignatureRequestForDocument } from "../../esign/actions";
 
 /**
  * Client-detail vault UI (M3; async scan M5): the Documents card and the
@@ -29,12 +30,14 @@ type ActionResult = { error?: string; ok?: boolean; autoAdvancedTo?: string; url
 export type DocRow = {
   id: string;
   filename: string;
+  contentType: string;
   status: "pending_scan" | "clean" | "infected" | "scan_failed";
   sizeBytes: number;
   createdAt: string;
   uploaderName: string | null;
-  /** M4: portal uploads carry a badge so staff see the client sent it. */
-  source: "staff_upload" | "portal_upload";
+  /** M4: portal uploads carry a badge so staff see the client sent it.
+   *  M6: esign_executed is the immutable stamped output of a signature. */
+  source: "staff_upload" | "portal_upload" | "esign_executed";
   engagementId: string | null;
   engagementLabel: string | null;
   scanResult: string | null;
@@ -134,12 +137,14 @@ export function DocumentsCard({
   engagements,
   canUpload,
   canManage,
+  canRequestSignature = false,
 }: {
   clientId: string;
   docs: DocRow[];
   engagements: EngagementOption[];
   canUpload: boolean;
   canManage: boolean;
+  canRequestSignature?: boolean;
 }) {
   const [notice, setNotice] = useState<string | null>(null);
   const { upload, busy, error } = useUpload(setNotice);
@@ -197,7 +202,13 @@ export function DocumentsCard({
       {docs.length === 0 && <p className="text-sm text-slate-400">No documents yet.</p>}
       <ul className="space-y-2">
         {docs.map((d) => (
-          <DocumentRow key={d.id} doc={d} engagements={engagements} canManage={canManage} />
+          <DocumentRow
+            key={d.id}
+            doc={d}
+            engagements={engagements}
+            canManage={canManage}
+            canRequestSignature={canRequestSignature}
+          />
         ))}
       </ul>
     </div>
@@ -208,15 +219,19 @@ function DocumentRow({
   doc,
   engagements,
   canManage,
+  canRequestSignature,
 }: {
   doc: DocRow;
   engagements: EngagementOption[];
   canManage: boolean;
+  canRequestSignature: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const meta = DOC_STATUS_META[doc.status];
+  const isSignablePdf =
+    doc.status === "clean" && doc.contentType === "application/pdf" && doc.source !== "esign_executed";
 
   const run = (fn: () => Promise<ActionResult>) =>
     startTransition(async () => {
@@ -233,6 +248,7 @@ function DocumentRow({
         </span>
         <Badge variant={meta.badge}>{meta.label}</Badge>
         {doc.source === "portal_upload" && <Badge variant="accent">Portal</Badge>}
+        {doc.source === "esign_executed" && <Badge variant="success">Signed</Badge>}
         {doc.status === "infected" && doc.scanResult && (
           <span className="text-[11px] text-red-600 font-mono">{doc.scanResult}</span>
         )}
@@ -279,6 +295,22 @@ function DocumentRow({
             }
           >
             <Download /> Download
+          </Button>
+        )}
+        {isSignablePdf && canRequestSignature && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={() =>
+              startTransition(async () => {
+                const res = await createSignatureRequestForDocument(doc.id);
+                if (res.requestId) router.push(`/app/esign/${res.requestId}`);
+                else setMsg(res.error ?? "Couldn't start the request.");
+              })
+            }
+          >
+            <PenLine /> Request signature
           </Button>
         )}
         {doc.status === "scan_failed" && canManage && (
