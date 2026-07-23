@@ -252,6 +252,65 @@ defaults — see ReminderSettings in schema/tenancy.ts).
 pg-boss keeps its queue tables in the `pgboss` schema (owned by crm_app;
 0016/0017) — not tenant data, payloads carry row ids only.
 
+## E-signature (M6, RLS FORCEd — drizzle/0020_m6_rls.sql)
+
+### signature_request
+Single-signer envelope: client_id FK, document_id FK (clean vault PDF,
+restrict), engagement_id FK nullable, title, mode (remote/in_person), status
+(draft/sent/viewed/signed/declined/canceled), snapshotted signer
+name/email/phone, placements jsonb (normalised {page,xPct,yPct,wPct,hPct,
+kind} — ADR-0025), source/signed sha256 hashes, signed_document_id FK (the
+NEW immutable executed PDF, source 'esign_executed' — ADR-0027),
+signature_method (drawn/typed), signed_via/ip/token_id/by_staff_id (audit
+page facts), decline_reason, lifecycle timestamps.
+
+## CRA authorizations (M7, RLS FORCEd — drizzle/0022_m7_rls.sql)
+
+### cra_authorization
+| field | type | notes |
+|---|---|---|
+| client_id | uuid FK client (cascade) | |
+| level | enum authorization_level | level1 (view) / level2 (view+change) / level3 (delegate, business) |
+| status | enum authorization_status | pending / active / expired / revoked — what staff recorded |
+| expiry_date | date null | null = no expiry; an ACTIVE row past this date counts as expired (derived, ADR-0028) |
+| notes | text | |
+| created_by | text FK staff_user | |
+
+Coverage rollup (best row wins: active > pending > expired > revoked > none)
+lives in src/lib/authorizations.ts; the dashboard's uncovered count mirrors
+the same expiry semantics in SQL (countClientsWithoutActiveAuthorization).
+
+## Time & billing (M7, RLS FORCEd — drizzle/0022_m7_rls.sql)
+
+All money integer CENTS (CAD) — ADR-0030.
+
+### time_entry
+| field | type | notes |
+|---|---|---|
+| client_id | uuid FK client (cascade) | |
+| engagement_id | uuid FK engagement null (set null) | |
+| user_id | text FK staff_user | who did the work (created_by = who typed it) |
+| work_date | date | |
+| minutes | int | |
+| description | text | |
+| rate_cents | int | hourly-rate snapshot at entry time (org default prefill) |
+| invoice_id | uuid FK invoice null (set null) | null = unbilled WIP; set when invoiced; cleared on void |
+
+### invoice
+| field | type | notes |
+|---|---|---|
+| client_id | uuid FK client (cascade) | |
+| number | int | per-org sequence from 1 (unique org_id+number); shown as INV-0001 |
+| status | enum invoice_status | draft / sent / paid / void |
+| issue_date, due_date | date | |
+| lines | jsonb InvoiceLine[] | snapshot of the billed entries — edits to entries never change an issued invoice |
+| subtotal_cents, tax_cents, total_cents | int | tax rounded once on the subtotal |
+| tax_label, tax_rate_bps | text, int | e.g. "HST (13%)", 1300; org defaults in org.settings.billing |
+| notes | text | printed on the PDF |
+| sent_at, paid_at, voided_at | timestamptz | |
+
+The PDF is generated on demand (src/lib/invoice-pdf.ts) — never stored.
+
 ## Enums
 subscription_status: trialing, active, past_due, canceled
 staff_role: owner, admin, accountant, clerk
@@ -266,12 +325,18 @@ engagement_type: t1, t2, t3, other
 stage_category: not_started, awaiting_docs, in_progress, awaiting_signature, filed, complete
 contact_channel: phone, email, sms, meeting, mail, other
 document_status: pending_scan, clean, infected, scan_failed
-document_source: staff_upload, portal_upload
+document_source: staff_upload, portal_upload, esign_executed
 checklist_item_status: missing, received, waived
 message_kind: manual, mass, reminder
 message_status: queued, sent, failed, skipped
+signature_request_mode: remote, in_person
+signature_request_status: draft, sent, viewed, signed, declined, canceled
+signature_method: drawn, typed
+authorization_level: level1, level2, level3
+authorization_status: pending, active, expired, revoked
+invoice_status: draft, sent, paid, void
 
 ## Planned (added at their milestone; spec §3)
-signature_request, cra_authorization, time_entry, invoice,
-ai_interaction, import_batch, import_mapping_template, staging tables.
-(trusted_helper is folded into portal_token — is_helper/include_household.)
+ai_interaction (M8), import_batch, import_mapping_template, staging tables
+(M9). (trusted_helper is folded into portal_token — is_helper/
+include_household.)

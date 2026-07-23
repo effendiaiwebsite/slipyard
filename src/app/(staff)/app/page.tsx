@@ -15,12 +15,13 @@ export default async function DashboardPage() {
 
   // Personal variant counts only what's assigned to the viewer.
   const mineOnly = firmWide ? undefined : ctx.user.id;
-  const [stages, byStage, clients, members, openSignatures] = await Promise.all([
+  const [stages, byStage, clients, members, openSignatures, uncoveredClients] = await Promise.all([
     ctx.scope.listStages(),
     ctx.scope.countEngagementsByStage(mineOnly),
     ctx.scope.listClientsWithMeta(mineOnly ? { assignedToId: mineOnly } : undefined),
     firmWide ? ctx.scope.listMemberships() : Promise.resolve(null),
     ctx.scope.countOpenSignatureRequests(mineOnly),
+    ctx.scope.countClientsWithoutActiveAuthorization(mineOnly),
   ]);
 
   // Category totals survive any stage customization (ADR-0015).
@@ -54,10 +55,7 @@ export default async function DashboardPage() {
     },
   ];
 
-  const upcoming = [
-    { label: "Documents outstanding", milestone: "M3" },
-    { label: "Authorization coverage", milestone: "M7" },
-  ];
+  const upcoming = [{ label: "Documents outstanding", milestone: "M3" }];
 
   return (
     <div className="p-6 space-y-6">
@@ -131,6 +129,23 @@ export default async function DashboardPage() {
               <div className="text-2xl font-semibold tabular-nums">{openSignatures}</div>
               <Badge className="mt-2" variant="accent">
                 E-signatures
+              </Badge>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/app/tax/authorizations">
+          <Card className="hover:ring-2 hover:ring-indigo-200 transition h-full">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-slate-500 font-medium">
+                Authorization coverage
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold tabular-nums">{uncoveredClients}</div>
+              <Badge className="mt-2" variant={uncoveredClients > 0 ? "warn" : "success"}>
+                {uncoveredClients === 1
+                  ? "client without CRA access"
+                  : "clients without CRA access"}
               </Badge>
             </CardContent>
           </Card>

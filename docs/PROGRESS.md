@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-23 (M6 e-signature complete — 112 Vitest / 23 Playwright green)_
+_Last updated: 2026-07-23 (M7 CRA authorizations / AFR / time & billing / reporting complete — 150 Vitest / 26 Playwright green)_
 
 ## DONE
 - **M0 — Foundation** (commit `M0: ...`): scaffold, RLS + OrgScope, better-auth
@@ -233,9 +233,68 @@ _Last updated: 2026-07-23 (M6 e-signature complete — 112 Vitest / 23 Playwrigh
     (2 new in m6.spec.ts: create→place→send, and the ACCEPTANCE in-person
     draft→sent→signed with an immutable executed PDF in signed/).
 
+- **M7 — CRA authorizations, AFR reconciliation, time & billing (basic),
+  reporting** (this commit):
+  - Schema + FORCEd RLS (0021/0022): cra_authorization (level 1/2/3, status
+    pending/active/expired/revoked, optional expiry_date, notes), time_entry
+    (work_date, minutes, description, rate_cents snapshot, invoice_id null =
+    unbilled WIP), invoice (per-org number from 1, draft/sent/paid/void,
+    lines jsonb snapshot, integer-cents totals, tax label + bps). Org
+    settings gain `billing` defaults ($200/h, HST 13% — billingSettings()
+    accessor, no backfill).
+  - CRA authorizations (ADR-0028): src/lib/authorizations.ts derives the
+    EFFECTIVE state (active past expiry counts as expired; 90-day
+    "expiring soon" window) and rolls each client up to one verdict
+    (active > pending > expired > revoked > none). /app/tax/authorizations
+    (placeholder replaced) = coverage dashboard: stat cards + per-client
+    table, needs-attention sorted. Records managed on the client detail
+    page ("CRA authorization" card: add/edit/status/delete). Dashboard
+    "Authorization coverage" card wired to the real uncovered count
+    (countClientsWithoutActiveAuthorization — expiry-aware SQL). New
+    actions authorizations.view (all roles, grace-allowed) /
+    authorizations.manage (accountant assigned, clerk deny).
+  - AFR reconciliation (ADR-0029): /app/tax/afr (placeholder replaced) —
+    pick client + tax year, paste the CRA slip CSV from the tax software's
+    Auto-fill download, compare. src/lib/afr.ts: tolerant parser
+    (delimiter auto-detect, header aliases, quoted fields, line warnings) +
+    word-boundary slip-family matching (T4 ≠ T4A ≠ T4A(OAS); T5 ≠ T5008)
+    against checklist titles then document filenames. Verdicts on_file /
+    missing / waived (CRA has it, we marked not-needed) / untracked, with
+    one-click "Track on checklist" (documents.manage + auto-advance), plus
+    the reverse "on our checklist, not in CRA data" list. Stateless — the
+    compare stores nothing, audited as documents.view.
+  - Time & billing (ADR-0030): /app/billing (placeholder replaced) —
+    record time (client/engagement/date/hours/rate, org-default prefill),
+    unbilled-WIP-per-client rollup, one-click invoice of ALL a client's
+    unbilled entries (atomic: lines snapshot + max(number)+1 per org +
+    entry stamping), invoice list + detail (status marches draft→sent→paid;
+    void releases entries back to WIP, snapshot kept), on-demand PDF at
+    /api/billing/invoices/[id]/pdf (src/lib/invoice-pdf.ts, pdf-lib per
+    ADR-0024 — never stored; audited invoices.view; assigned-only 404).
+    Money = integer cents everywhere (src/lib/timebilling.ts). New actions
+    invoices.view (all roles, grace-allowed) / invoices.manage /
+    time.record (accountant assigned, clerk deny).
+  - Reporting: /app/reports (new sidebar entry under Practice) — read-only
+    practice rollup: pipeline by stage, client mix + returns by type/year,
+    authorization coverage, billing (WIP / outstanding / paid). Scoped
+    like every list (assigned-only accountants see their book).
+  - Seed: 7 authorizations covering every coverage state (3 covered incl.
+    one expiring soon, 1 pending, 1 active-but-expired, 1 revoked, 3 none),
+    7 time entries (2 invoiced), 1 sent invoice INV-0001 ($932.25,
+    lib-computed), org-2 isolation rows for all three tables (org-2 invoice
+    is also #1 — proves per-org numbering).
+  - Tests: 150 Vitest (38 new: afr.test.ts parsing/matching,
+    authorizations.test.ts derivation/coverage/RLS/matrix,
+    timebilling.test.ts money math/invoicing/void/RLS/matrix/PDF) + 26
+    Playwright (3 new ACCEPTANCE tests in m7.spec.ts: coverage dashboard
+    correct vs seed and moves when a record is added; AFR compare from a
+    pasted CSV + track-on-checklist; record time → invoice → PDF serves
+    with %PDF bytes). m4's revoke assertion re-scoped to a list item (the
+    client page now carries a hidden <option>Revoked</option> in the
+    authorization status select). Production build verified.
+
 ## IN PROGRESS
-- Nothing — stopped at the M6 boundary. Next milestone is M7 (CRA
-  authorizations, AFR reconciliation, basic time & billing, reporting).
+- Nothing — stopped at the M7 boundary. Next milestone is M8 (AI suite).
 - **Flagging Satinder (M6 real-device checks, optional):** the whole flow is
   proven in e2e (in-person draft→sent→signed, immutable executed PDF). The
   remaining human check is REMOTE signing on a real phone through a tunnel:
@@ -318,6 +377,21 @@ _Last updated: 2026-07-23 (M6 e-signature complete — 112 Vitest / 23 Playwrigh
   (message layer, awaiting_signature category) is already there.
 - **Executed PDFs have no delete path** (same 7-year retention posture as vault
   docs) — deliberate; the M9 retention flow covers review/removal.
+- **Invoicing bills ALL of a client's unbilled time** (no per-entry
+  cherry-picking) and there's no invoice-edit surface — void and re-record
+  is the correction path. Deliberate basic scope (ADR-0030); extend when a
+  customer asks.
+- **No billing-settings UI**: the org's default hourly rate / tax rate+label
+  are code-side defaults (org.settings.billing, billingSettings()); both are
+  editable per entry / applied per invoice. A Settings card is trivial to
+  add when Joey wants firm-specific defaults.
+- **AFR matching covers the common slip families** (T4 group, T5 group, T3,
+  T2202, RRSP, RC62); unknown slip types fall back to a literal token match
+  and land as "untracked" at worst — never silently dropped.
+- Seed authorization expiries are fixed dates (Hélène 2026-09-15, Blackwood
+  2026-01-31), same convention as the portal-token fixture dates: the seeded
+  "expiring soon" badge reads correctly while the dev clock sits in the 2026
+  season; unit tests pin `today` explicitly.
 - **Clerk (front-desk) dashboard is the personal/assigned-to-me variant, which
   reads mostly zero for clerks** (nothing is ever assigned to a clerk).
   Customer-noted 2026-07-22; logged for M10 polish. Their actual workflow
@@ -383,18 +457,18 @@ _Last updated: 2026-07-23 (M6 e-signature complete — 112 Vitest / 23 Playwrigh
 - AWS budget alarm skipped for now (new account on free credits with
   automatic credit-exhaustion notifications).
 
-## NEXT 3 CONCRETE STEPS (M7 — CRA authorizations, AFR, time & billing, reporting)
-1. CRA authorization tracking (T1013/AuthRep-style): schema + RLS for a
-   client's authorization records (level, status, expiry), a coverage
-   dashboard, and the sidebar page at /app/tax/authorizations (currently a
-   placeholder). Acceptance: coverage dashboard is correct vs the seed.
-2. AFR (Auto-fill My Return) reconciliation: paste/import a CRA slip CSV and
-   compare against what's on file / entered, surfacing mismatches. Acceptance:
-   AFR compare works from a pasted CSV.
-3. Basic time & billing (the /app/billing page is a placeholder) + an invoice
-   PDF generator (reuse pdf-lib from M6). Acceptance: an invoice PDF
-   generates. Plus the reporting surface for the milestone.
+## NEXT 3 CONCRETE STEPS (M8 — AI suite)
+1. AiService behind the Anthropic API key (mock without key, per the stack
+   list), permission-scoped READ tools only, per-org AI toggle
+   (org.settings.ai_enabled already exists), ai_interaction logging table.
+   Iron rule: AI drafts only — never writes records, never auto-sends,
+   never auto-classifies; no SIN/full DOB to model APIs.
+2. Knowledge assistant + email drafts→Messaging drafts + meeting prep
+   surfaces (the /app/ai/* placeholder pages). Acceptance: assistant
+   answers respect role scoping (clerk test); zero write paths from AI
+   proven by test; drafts never auto-send.
+3. Audit risk (rules+narrative) + optimization advisor.
 
-Handy M6 leftovers for M7: pdf-lib is now a dependency (invoices reuse it);
-the e-sign dashboard-card pattern (real count on the landing page) is the model
-for the authorization-coverage card.
+Handy M7 leftovers for M8: the reports page shows the aggregates the
+assistant will want to read; viewAssignedOnlyFilter is the scoping pattern
+for AI read tools.

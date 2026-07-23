@@ -5,6 +5,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { Pool } from "pg";
 import { encryptField } from "../src/lib/crypto";
 import { DEFAULT_MESSAGE_TEMPLATES } from "../src/lib/templates";
+import { computeTotals, linesFromEntries } from "../src/lib/timebilling";
 import { features } from "../src/lib/env";
 import { putObject } from "../src/lib/storage";
 import * as schema from "../src/db/schema";
@@ -66,7 +67,8 @@ async function main() {
 
   // Wipe in FK order. TRUNCATE ... CASCADE keeps this list forgiving.
   await pool.query(
-    `truncate table message, message_template, outbox, portal_token, checklist_item,
+    `truncate table time_entry, invoice, cra_authorization,
+     message, message_template, outbox, portal_token, checklist_item,
      document, contact_log, client_note,
      engagement, engagement_stage, client, household, audit_log, invitation,
      org_membership, auth_two_factor, auth_verification, auth_account,
@@ -594,6 +596,85 @@ async function main() {
     },
   ]);
 
+  // ---- M7: CRA authorizations -------------------------------------------------
+  // Every coverage state the dashboard distinguishes (fixed dates assume the
+  // dev clock sits in the 2026 season, like the portal-token fixtures):
+  //   covered: Marc (L2, no expiry), Hélène (L1, expires 2026-09-15 — inside
+  //   the 90-day "expiring soon" window), Pines & Birch (L3 business).
+  //   not covered: An (pending), Blackwood Trust (active but expiry passed →
+  //   effectively expired), Linh (revoked), Ruth/Sofia/Dmitri (no record).
+  const auth = (n: number) => `a0700001-0000-4000-8000-0000000000${n.toString(16).padStart(2, "0")}`;
+  await db.insert(schema.craAuthorization).values([
+    { id: auth(1), orgId: SEED.org1, clientId: c.marc, level: "level2", status: "active", notes: "AuthRep confirmed by CRA 2024.", createdBy: u.sam },
+    { id: auth(2), orgId: SEED.org1, clientId: c.helene, level: "level1", status: "active", expiryDate: "2026-09-15", notes: "Client set an expiry — renew before September.", createdBy: u.sam },
+    { id: auth(3), orgId: SEED.org1, clientId: c.an, level: "level2", status: "pending", notes: "Submitted via Represent a Client, awaiting confirmation.", createdBy: u.joey },
+    { id: auth(4), orgId: SEED.org1, clientId: c.pinesBirch, level: "level3", status: "active", notes: "Business authorization (RC59-style), delegate level.", createdBy: u.sam },
+    { id: auth(5), orgId: SEED.org1, clientId: c.blackwoodTrust, level: "level2", status: "active", expiryDate: "2026-01-31", notes: "Lapsed at end of January — needs re-authorization.", createdBy: u.joey },
+    { id: auth(6), orgId: SEED.org1, clientId: c.linh, level: "level1", status: "revoked", notes: "Client revoked online while switching firms; re-signed with us since.", createdBy: u.maria },
+    // Org 2 — isolation.
+    { id: auth(7), orgId: SEED.org2, clientId: c.northClient, level: "level2", status: "active", createdBy: u.northOwner },
+  ]);
+
+  // ---- M7: time & billing -----------------------------------------------------
+  // Unbilled WIP for several clients + one SENT invoice for Pines & Birch
+  // whose two entries are stamped with its id (ADR-0030).
+  const te = (n: number) => `7e000001-0000-4000-8000-0000000000${n.toString(16).padStart(2, "0")}`;
+  const invoice1 = "b1110001-0000-4000-8000-000000000001";
+  const invoicedEntries = [
+    { id: te(1), clientId: c.pinesBirch, engagementId: eng(7), userId: u.sam, workDate: "2026-07-03", minutes: 180, description: "Year-end file setup and GL review", rateCents: 17500 },
+    { id: te(2), clientId: c.pinesBirch, engagementId: eng(7), userId: u.joey, workDate: "2026-07-06", minutes: 90, description: "CCA planning for new truck purchase", rateCents: 20000 },
+  ];
+  const wipEntries = [
+    { id: te(3), clientId: c.pinesBirch, engagementId: eng(7), userId: u.sam, workDate: "2026-07-14", minutes: 60, description: "Draft T2 schedules", rateCents: 17500 },
+    { id: te(4), clientId: c.ruth, engagementId: eng(5), userId: u.sam, workDate: "2026-07-10", minutes: 30, description: "Chased missing NOA and daycare receipts", rateCents: 17500 },
+    { id: te(5), clientId: c.an, engagementId: eng(3), userId: u.joey, workDate: "2026-07-09", minutes: 75, description: "Reviewed HST summary against business records", rateCents: 20000 },
+    { id: te(6), clientId: c.blackwoodTrust, engagementId: eng(8), userId: u.joey, workDate: "2026-07-16", minutes: 120, description: "Trust allocation working paper", rateCents: 20000 },
+  ];
+  const invoiceLines = linesFromEntries(invoicedEntries);
+  const invoiceTotals = computeTotals(invoiceLines, 1300);
+  await db.insert(schema.invoice).values([
+    {
+      id: invoice1,
+      orgId: SEED.org1,
+      clientId: c.pinesBirch,
+      number: 1,
+      status: "sent",
+      issueDate: "2026-07-07",
+      dueDate: "2026-08-06",
+      lines: invoiceLines,
+      subtotalCents: invoiceTotals.subtotalCents,
+      taxLabel: "HST (13%)",
+      taxRateBps: 1300,
+      taxCents: invoiceTotals.taxCents,
+      totalCents: invoiceTotals.totalCents,
+      notes: "Interim billing for the 2025 year-end.",
+      createdBy: u.joey,
+      sentAt: new Date("2026-07-07T15:00:00Z"),
+    },
+    // Org 2 — isolation; also proves invoice numbering is per-org (both are #1).
+    {
+      id: "b1110002-0000-4000-8000-000000000001",
+      orgId: SEED.org2,
+      clientId: c.northClient,
+      number: 1,
+      status: "draft",
+      issueDate: "2026-07-15",
+      lines: [{ description: "2026-07-15 — Prior-year review", minutes: 60, rateCents: 15000, amountCents: 15000 }],
+      subtotalCents: 15000,
+      taxLabel: "GST (5%)",
+      taxRateBps: 500,
+      taxCents: 750,
+      totalCents: 15750,
+      createdBy: u.northOwner,
+    },
+  ]);
+  await db.insert(schema.timeEntry).values([
+    ...invoicedEntries.map((e) => ({ ...e, orgId: SEED.org1, invoiceId: invoice1, createdBy: e.userId })),
+    ...wipEntries.map((e) => ({ ...e, orgId: SEED.org1, createdBy: e.userId })),
+    // Org 2 — isolation (unbilled).
+    { id: "7e000002-0000-4000-8000-000000000001", orgId: SEED.org2, clientId: c.northClient, userId: u.northOwner, workDate: "2026-07-15", minutes: 45, description: "Intake call", rateCents: 15000, createdBy: u.northOwner },
+  ]);
+
   await db.insert(schema.auditLog).values({
     orgId: SEED.org1,
     actorType: "system",
@@ -605,7 +686,7 @@ async function main() {
 
   await pool.end();
 
-  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements, 7 documents, 11 checklist items, 3 portal tokens, 6 message templates, 2 signature requests.");
+  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements, 7 documents, 11 checklist items, 3 portal tokens, 6 message templates, 2 signature requests, 7 CRA authorizations, 7 time entries, 2 invoices.");
   console.log("Dev logins (all password: %s):", SEED.password);
   for (const s of staff) console.log(`  ${s.role.padEnd(10)} ${s.email}  (${s.orgId === SEED.org1 ? "Lakeside CPA" : "Northern Tax"})`);
   console.log("First login will require TOTP enrollment (mandatory 2FA).");

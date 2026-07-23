@@ -228,6 +228,55 @@ Tenancy isolation · permissions · tokens · presign (M3) · Stripe webhooks
   they still assert the same end states against the REAL dev bucket +
   clamd.
 
+## Automated coverage (M6)
+- `tests/esign.test.ts` — CRA timestamp format (`YYYY/MM/DD HH:MM:SS`, org
+  TZ, 24h incl. midnight normalisation); sha256 hashing; stampSignature
+  (audit page appended, source buffer untouched, drawn PNG + typed marks);
+  decodeSignatureMark (PNG magic-byte validation); send advances the linked
+  engagement to the first awaiting_signature-category stage forward-only
+  (ADR-0027); execute writes a NEW immutable doc under signed/ and marks the
+  request; RLS isolation on signature_request; assigned-only list scoping;
+  signatures.view/manage matrix rows.
+- `e2e/m6.spec.ts` — staff create-from-PDF → place a field on the
+  aspect-true page box → send (draft → sent, dashboard listing).
+  **ACCEPTANCE**: in-person signing (typed) stamps an immutable executed
+  PDF — request row records method/via/hash, source document byte-identical,
+  executed copy is a new object in signed/ with a "Signed" badge on the
+  client's Documents card.
+
+## Automated coverage (M7)
+- `tests/afr.test.ts` (pure) — CSV parsing: documented comma format with
+  amounts, tab/semicolon auto-detect, quoted fields, missing slip-type
+  column reported (not guessed), typeless rows skipped with line numbers,
+  currency amounts; slip normalisation; compare verdicts
+  (on_file/missing/waived/untracked), document-filename upgrade of a
+  missing item, T4/T4A/T4A(OAS)/T5/T5008 discrimination both directions,
+  reverse "items not in CRA data" list limited to slip-shaped items.
+- `tests/authorizations.test.ts` — effectiveAuthStatus (active decays past
+  expiry, expiry day itself still active, revoked never resurrects);
+  summarizeCoverage (best-row precedence, 90-day expiring-soon flag,
+  needsAttention); OrgScope CRUD with client context;
+  countClientsWithoutActiveAuthorization (expiry-aware, archived clients
+  excluded); RLS isolation; authorizations matrix rows (clerk views, never
+  manages; accountant assigned-only).
+- `tests/timebilling.test.ts` — money math (per-entry rounding, tax rounded
+  once on the subtotal, INV-0001 formatting); generateInvoicePdf loads as a
+  real PDF and paginates 60 lines; createInvoiceWithEntries is atomic and
+  per-org sequential, ignores foreign/billed/other-client entry ids, null
+  on empty; void releases entries to WIP but keeps the lines snapshot;
+  sent/paid stamp timestamps; unbilled-only listing; deleteTimeEntry
+  refuses invoiced entries; RLS isolation; time.record/invoices.* matrix
+  rows.
+- `e2e/m7.spec.ts` — three ACCEPTANCE tests: (1) coverage dashboard correct
+  vs seed — 3/9 covered, every state badge (expiring soon / pending /
+  expired / revoked / none) on the right client, dashboard card count 6,
+  and adding an active record for Sofia moves both to 4/9 and 5; (2) AFR
+  compare from a pasted CSV — Ruth's T4 reads "On file", four sample slips
+  untracked, "Track on checklist" lands "T5 slip — Scotiabank" on her
+  engagement; (3) record time → create invoice (INV-0002, $226.00 = $200 +
+  13% HST) → the PDF endpoint serves application/pdf with %PDF bytes over
+  the staff session → mark sent → entry reads Invoiced.
+
 ## Manual checklist — M5 (pending Twilio/SES credentials)
 With real keys in .env (TWILIO_* trio; EMAIL_MODE=ses + verified
 SES_FROM_ADDRESS):

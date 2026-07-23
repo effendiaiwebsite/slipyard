@@ -7,6 +7,7 @@ import {
   Users,
   Kanban,
   Clock,
+  BarChart3,
   FileText,
   Inbox,
   GitCompare,
@@ -38,6 +39,7 @@ const sections: { title: string; items: Item[] }[] = [
       { href: "/app/clients", label: "Clients", icon: Users },
       { href: "/app/workflow", label: "Workflow board", icon: Kanban },
       { href: "/app/billing", label: "Time & billing", icon: Clock },
+      { href: "/app/reports", label: "Reports", icon: BarChart3 },
     ],
   },
   {

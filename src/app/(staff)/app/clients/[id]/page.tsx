@@ -19,6 +19,11 @@ import {
 import { PortalAccessCard, type PortalLinkView } from "./portal-access";
 import { ChecklistPanel, DocumentsCard } from "./vault-section";
 import { PORTAL_LINK_OPENED_TTL_MS, PORTAL_OTP_MAX_ATTEMPTS } from "@/lib/portal-tokens";
+import { AUTH_LEVEL_LABELS, effectiveAuthStatus, summarizeCoverage } from "@/lib/authorizations";
+import {
+  AuthorizationsCard,
+  type AuthorizationView,
+} from "../../tax/authorizations/authorization-card";
 
 export const metadata = { title: "Client" };
 
@@ -57,13 +62,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
     !ctx.readOnly && can(ctx.actor, "clients.update", clientResource, ctx.orgSettings);
   const canCreateEng = !ctx.readOnly && can(ctx.actor, "engagements.create", clientResource);
 
-  const [memberships, stageRows, clientDocs, clientChecklistItems, portalLinks] =
+  const [memberships, stageRows, clientDocs, clientChecklistItems, portalLinks, authRecords] =
     await Promise.all([
       ctx.scope.listMemberships(),
       ctx.scope.listStages(),
       ctx.scope.listDocumentsByClient(c.id),
       ctx.scope.listChecklistItemsForClient(c.id),
       ctx.scope.listPortalTokensForClient(c.id),
+      ctx.scope.listAuthorizationsForClient(c.id),
     ]);
   const engagementLabel = new Map(
     detail.engagements.map(({ engagement: e }) => [
@@ -95,6 +101,21 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
   const canManagePortal =
     !ctx.readOnly && can(ctx.actor, "portal.manage_links", clientResource, ctx.orgSettings);
   const portalLinkViews = toPortalLinkViews(portalLinks);
+
+  const canManageAuth =
+    !ctx.readOnly && can(ctx.actor, "authorizations.manage", clientResource, ctx.orgSettings);
+  const today = new Date();
+  const authCoverage = summarizeCoverage(authRecords, today);
+  const authViews: AuthorizationView[] = authRecords.map((r) => ({
+    id: r.id,
+    level: r.level,
+    levelLabel: AUTH_LEVEL_LABELS[r.level],
+    status: r.status,
+    effectiveStatus: effectiveAuthStatus(r, today),
+    expiryDate: r.expiryDate,
+    expiringSoon: authCoverage.row?.id === r.id && authCoverage.expiringSoon,
+    notes: r.notes,
+  }));
 
   return (
     <div className="p-6 space-y-5">
@@ -359,6 +380,19 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               ) : (
                 <p className="text-slate-400">Not part of a household.</p>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">CRA authorization</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AuthorizationsCard
+                clientId={c.id}
+                records={authViews}
+                canManage={canManageAuth}
+              />
             </CardContent>
           </Card>
 

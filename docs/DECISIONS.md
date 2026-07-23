@@ -287,3 +287,55 @@ no-op if the pipeline has no such category or the engagement is already at/past
 it, audited actor_type=system action esign.stage_advanced). Signing does NOT
 auto-transition further; staff move to filed themselves (ADR-0013's manual
 any→any stance holds).
+
+## ADR-0028 (2026-07-23) — CRA authorizations: recorded status + derived expiry, one coverage verdict per client
+The CRM tracks the firm's CRA representation paperwork (T1013/AuthRep for
+individuals, RC59-style for businesses) BESIDE the EFILE software — it never
+talks to the CRA, so rows record what staff know: level (1 view / 2 view+
+change / 3 delegate), status (pending/active/expired/revoked), optional
+expiry (CRA authorizations don't expire unless the client set a date), notes.
+Two derivations, both in src/lib/authorizations.ts and mirrored in SQL for
+the dashboard count: an 'active' row past its expiry_date COUNTS AS expired
+without anyone editing it (staleness must not look like coverage), and a
+client's rows roll up to one verdict — active > pending > expired > revoked >
+none — with a 90-day "expiring soon" flag on active coverage. Records are
+managed on the client detail page; /app/tax/authorizations is the read-only
+coverage dashboard (needs-attention sorted). Rows may be deleted only to fix
+data-entry mistakes (audited); real lifecycle changes are status edits, so
+history stays reconstructable from the audit log.
+
+## ADR-0029 (2026-07-23) — AFR reconciliation: pasted CSV, stateless compare, word-boundary slip matching
+The firm's tax software downloads the CRA's slip list (Auto-fill My Return);
+the CRM can't (no CRA integration by design), so the bridge is a pasted CSV
+(/app/tax/afr). Parsing (src/lib/afr.ts) is tolerant — delimiter auto-detect
+(comma/semicolon/tab), header aliases (slip/type/form, issuer/payer/employer,
+amount/total), quoted fields, per-line warnings — because every tax package
+exports slightly differently. The compare is STATELESS: nothing is imported
+or stored (slip amounts can embed income data; we surface, staff act), and
+the run is audited as a documents.view with row counts only. Matching keys on
+word-boundary slip-family tokens (T4 ≠ T4A ≠ T4A(OAS) ≠ T4RSP; T5 ≠ T5008)
+against checklist item titles first, then document filenames. Verdicts:
+on_file (received item or filename match), missing (tracked, not received),
+waived (marked not-needed yet the CRA has it — surfaced loudly), untracked
+(nothing covers it, with a one-click "track on checklist" that creates a
+required item via the normal documents.manage path + auto-advance). A
+reverse list shows slip-shaped checklist items absent from the CRA data as
+"double-check", not errors — slips reach the CRA late.
+
+## ADR-0030 (2026-07-23) — Time & billing: integer cents, snapshot lines, per-org numbering, on-demand PDF
+All money is integer CENTS (CAD); rates are per-hour snapshots on each time
+entry (org default from settings.billing, editable per entry); rounding
+happens once per entry (minutes × rate) and once for tax (on the subtotal,
+org-default rate/label per invoice). Invoicing takes ALL of a client's
+unbilled entries (cherry-picking is deferred until a customer asks),
+snapshots them into the invoice's `lines` jsonb, assigns max(number)+1
+per org atomically, and stamps entry.invoice_id — so editing/deleting
+entries never changes an issued invoice, unbilled WIP is simply
+invoice_id IS NULL, and invoice numbers are gapless per firm. Statuses
+draft→sent→paid, or void (draft/sent only); voiding clears its entries'
+invoice_id (work returns to WIP) but keeps the lines snapshot for the
+record. The PDF (src/lib/invoice-pdf.ts, pdf-lib per ADR-0024) renders on
+demand from the row via an audited staff-session route and is never stored —
+the row is authoritative and the bytes are reproducible, so retaining
+another S3 object would only create a second source of truth. Invoiced time
+entries are immutable (delete refuses them); paid invoices are terminal.

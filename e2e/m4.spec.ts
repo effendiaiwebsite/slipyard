@@ -203,7 +203,11 @@ test("revoking a link kills the live portal session; org-2 links are invisible",
   await page.reload();
   const inUseRow = page.locator("li", { hasText: "In use" }).first();
   await inUseRow.getByTitle("Revoke this link").click();
-  await expect(page.getByText("Revoked").first()).toBeVisible({ timeout: 15_000 });
+  // Scoped to a list item: since M7 the page also carries a hidden
+  // <option>Revoked</option> in the CRA-authorization status select.
+  await expect(page.locator("li", { hasText: "Revoked" }).first()).toBeVisible({
+    timeout: 15_000,
+  });
 
   // The client's very next navigation bounces to the landing explainer.
   await portal.goto("/portal/checklist");

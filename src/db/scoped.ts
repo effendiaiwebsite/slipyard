@@ -2,6 +2,7 @@ import { and, asc, desc, eq, ilike, inArray, isNull, max, ne, sql } from "drizzl
 import { db, schema } from ".";
 import { DEFAULT_ENGAGEMENT_STAGES, type StageCategory } from "./schema";
 import { DEFAULT_MESSAGE_TEMPLATES } from "@/lib/templates";
+import { computeTotals, linesFromEntries } from "@/lib/timebilling";
 
 /**
  * Org-scoped repository layer — the ONLY sanctioned path to tenant data.
@@ -1538,6 +1539,331 @@ export class OrgScope {
         .innerJoin(schema.client, eq(schema.signatureRequest.clientId, schema.client.id))
         .where(and(...conds));
       return rows[0]?.count ?? 0;
+    });
+  }
+
+  // ---- CRA authorizations (M7) ------------------------------------------------
+
+  /** Coverage page: every authorization row with client context. */
+  async listAuthorizations(opts?: { assignedToId?: string }) {
+    return this.tx((tx) => {
+      const conds = [eq(schema.craAuthorization.orgId, this.orgId)];
+      if (opts?.assignedToId) conds.push(eq(schema.client.assignedAccountantId, opts.assignedToId));
+      return tx
+        .select({
+          auth: schema.craAuthorization,
+          clientName: schema.client.displayName,
+        })
+        .from(schema.craAuthorization)
+        .innerJoin(schema.client, eq(schema.craAuthorization.clientId, schema.client.id))
+        .where(and(...conds))
+        .orderBy(desc(schema.craAuthorization.createdAt));
+    });
+  }
+
+  async listAuthorizationsForClient(clientId: string) {
+    return this.tx((tx) =>
+      tx
+        .select()
+        .from(schema.craAuthorization)
+        .where(
+          and(
+            eq(schema.craAuthorization.orgId, this.orgId),
+            eq(schema.craAuthorization.clientId, clientId)
+          )
+        )
+        .orderBy(desc(schema.craAuthorization.createdAt))
+    );
+  }
+
+  async getAuthorization(id: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.craAuthorization)
+        .where(
+          and(eq(schema.craAuthorization.orgId, this.orgId), eq(schema.craAuthorization.id, id))
+        );
+      return rows[0] ?? null;
+    });
+  }
+
+  async createAuthorization(fields: {
+    clientId: string;
+    level: "level1" | "level2" | "level3";
+    status?: "pending" | "active" | "expired" | "revoked";
+    expiryDate?: string | null;
+    notes?: string | null;
+    createdBy?: string | null;
+  }) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.craAuthorization)
+        .values({ orgId: this.orgId, ...fields })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async updateAuthorization(
+    id: string,
+    fields: Partial<{
+      level: "level1" | "level2" | "level3";
+      status: "pending" | "active" | "expired" | "revoked";
+      expiryDate: string | null;
+      notes: string | null;
+    }>
+  ) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.craAuthorization)
+        .set({ ...fields, updatedAt: new Date() })
+        .where(
+          and(eq(schema.craAuthorization.orgId, this.orgId), eq(schema.craAuthorization.id, id))
+        )
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  async deleteAuthorization(id: string) {
+    return this.tx((tx) =>
+      tx
+        .delete(schema.craAuthorization)
+        .where(
+          and(eq(schema.craAuthorization.orgId, this.orgId), eq(schema.craAuthorization.id, id))
+        )
+    );
+  }
+
+  /**
+   * Dashboard card: ACTIVE clients with no currently-usable authorization —
+   * no row that is status 'active' and unexpired (expiry semantics match
+   * src/lib/authorizations.ts effectiveAuthStatus).
+   */
+  async countClientsWithoutActiveAuthorization(assignedToId?: string): Promise<number> {
+    return this.tx(async (tx) => {
+      const conds = [
+        eq(schema.client.orgId, this.orgId),
+        eq(schema.client.status, "active"),
+        sql`not exists (
+          select 1 from cra_authorization a
+          where a.client_id = ${schema.client.id}
+            and a.org_id = ${this.orgId}
+            and a.status = 'active'
+            and (a.expiry_date is null or a.expiry_date >= current_date)
+        )`,
+      ];
+      if (assignedToId) conds.push(eq(schema.client.assignedAccountantId, assignedToId));
+      const rows = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(schema.client)
+        .where(and(...conds));
+      return rows[0]?.count ?? 0;
+    });
+  }
+
+  // ---- time & billing (M7) ----------------------------------------------------
+
+  async createTimeEntry(fields: {
+    clientId: string;
+    engagementId?: string | null;
+    userId: string;
+    workDate: string;
+    minutes: number;
+    description: string;
+    rateCents: number;
+    createdBy?: string | null;
+  }) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.timeEntry)
+        .values({ orgId: this.orgId, ...fields })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async getTimeEntry(id: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.timeEntry)
+        .where(and(eq(schema.timeEntry.orgId, this.orgId), eq(schema.timeEntry.id, id)));
+      return rows[0] ?? null;
+    });
+  }
+
+  /** Time log with client + worker names. Assigned-only scoping mirrors clients.view. */
+  async listTimeEntries(opts?: {
+    clientId?: string;
+    unbilledOnly?: boolean;
+    assignedToId?: string;
+    limit?: number;
+  }) {
+    return this.tx((tx) => {
+      const conds = [eq(schema.timeEntry.orgId, this.orgId)];
+      if (opts?.clientId) conds.push(eq(schema.timeEntry.clientId, opts.clientId));
+      if (opts?.unbilledOnly) conds.push(isNull(schema.timeEntry.invoiceId));
+      if (opts?.assignedToId) conds.push(eq(schema.client.assignedAccountantId, opts.assignedToId));
+      return tx
+        .select({
+          entry: schema.timeEntry,
+          clientName: schema.client.displayName,
+          userName: schema.staffUser.name,
+        })
+        .from(schema.timeEntry)
+        .innerJoin(schema.client, eq(schema.timeEntry.clientId, schema.client.id))
+        .leftJoin(schema.staffUser, eq(schema.timeEntry.userId, schema.staffUser.id))
+        .where(and(...conds))
+        .orderBy(desc(schema.timeEntry.workDate), desc(schema.timeEntry.createdAt))
+        .limit(opts?.limit ?? 500);
+    });
+  }
+
+  /** Delete an unbilled entry (typo). Invoiced entries are immutable history. */
+  async deleteTimeEntry(id: string) {
+    return this.tx((tx) =>
+      tx
+        .delete(schema.timeEntry)
+        .where(
+          and(
+            eq(schema.timeEntry.orgId, this.orgId),
+            eq(schema.timeEntry.id, id),
+            isNull(schema.timeEntry.invoiceId)
+          )
+        )
+    );
+  }
+
+  /**
+   * Invoice a set of the client's unbilled entries, atomically: snapshot them
+   * into lines, take the org's next invoice number, stamp the entries
+   * (ADR-0030). Ignores ids that aren't the client's unbilled entries.
+   */
+  async createInvoiceWithEntries(fields: {
+    clientId: string;
+    entryIds: string[];
+    issueDate: string;
+    dueDate?: string | null;
+    taxLabel: string;
+    taxRateBps: number;
+    notes?: string | null;
+    createdBy?: string | null;
+  }) {
+    return this.tx(async (tx) => {
+      const entries = await tx
+        .select()
+        .from(schema.timeEntry)
+        .where(
+          and(
+            eq(schema.timeEntry.orgId, this.orgId),
+            eq(schema.timeEntry.clientId, fields.clientId),
+            inArray(schema.timeEntry.id, fields.entryIds),
+            isNull(schema.timeEntry.invoiceId)
+          )
+        )
+        .orderBy(asc(schema.timeEntry.workDate), asc(schema.timeEntry.createdAt));
+      if (entries.length === 0) return null;
+
+      const numberRows = await tx
+        .select({ next: sql<number>`coalesce(max(${schema.invoice.number}), 0)::int + 1` })
+        .from(schema.invoice)
+        .where(eq(schema.invoice.orgId, this.orgId));
+      const number = numberRows[0]?.next ?? 1;
+
+      const lines = linesFromEntries(entries);
+      const totals = computeTotals(lines, fields.taxRateBps);
+      const rows = await tx
+        .insert(schema.invoice)
+        .values({
+          orgId: this.orgId,
+          clientId: fields.clientId,
+          number,
+          issueDate: fields.issueDate,
+          dueDate: fields.dueDate ?? null,
+          lines,
+          subtotalCents: totals.subtotalCents,
+          taxLabel: fields.taxLabel,
+          taxRateBps: fields.taxRateBps,
+          taxCents: totals.taxCents,
+          totalCents: totals.totalCents,
+          notes: fields.notes ?? null,
+          createdBy: fields.createdBy ?? null,
+        })
+        .returning();
+      const invoice = rows[0];
+
+      await tx
+        .update(schema.timeEntry)
+        .set({ invoiceId: invoice.id, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.timeEntry.orgId, this.orgId),
+            inArray(
+              schema.timeEntry.id,
+              entries.map((e) => e.id)
+            )
+          )
+        );
+      return invoice;
+    });
+  }
+
+  async listInvoices(opts?: { assignedToId?: string }) {
+    return this.tx((tx) => {
+      const conds = [eq(schema.invoice.orgId, this.orgId)];
+      if (opts?.assignedToId) conds.push(eq(schema.client.assignedAccountantId, opts.assignedToId));
+      return tx
+        .select({
+          invoice: schema.invoice,
+          clientName: schema.client.displayName,
+        })
+        .from(schema.invoice)
+        .innerJoin(schema.client, eq(schema.invoice.clientId, schema.client.id))
+        .where(and(...conds))
+        .orderBy(desc(schema.invoice.number));
+    });
+  }
+
+  async getInvoice(id: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.invoice)
+        .where(and(eq(schema.invoice.orgId, this.orgId), eq(schema.invoice.id, id)));
+      return rows[0] ?? null;
+    });
+  }
+
+  /**
+   * Status transitions. Voiding releases the invoice's time entries back to
+   * WIP (their invoice_id clears) — the lines snapshot stays on the voided
+   * row for the record (ADR-0030).
+   */
+  async setInvoiceStatus(id: string, status: "sent" | "paid" | "void") {
+    return this.tx(async (tx) => {
+      const stamp =
+        status === "sent"
+          ? { sentAt: new Date() }
+          : status === "paid"
+            ? { paidAt: new Date() }
+            : { voidedAt: new Date() };
+      const rows = await tx
+        .update(schema.invoice)
+        .set({ status, ...stamp, updatedAt: new Date() })
+        .where(and(eq(schema.invoice.orgId, this.orgId), eq(schema.invoice.id, id)))
+        .returning();
+      const invoice = rows[0] ?? null;
+      if (invoice && status === "void") {
+        await tx
+          .update(schema.timeEntry)
+          .set({ invoiceId: null, updatedAt: new Date() })
+          .where(
+            and(eq(schema.timeEntry.orgId, this.orgId), eq(schema.timeEntry.invoiceId, id))
+          );
+      }
+      return invoice;
     });
   }
 }

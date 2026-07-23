@@ -55,6 +55,23 @@ export const defaultReminderSettings: ReminderSettings = {
   template_id: null,
 };
 
+/**
+ * Time & billing defaults (M7). All money in integer cents (CAD); tax rate
+ * in basis points (1300 = 13%). These are the prefills for new time entries
+ * and invoices — both stay editable per entry/invoice (ADR-0030).
+ */
+export type BillingSettings = {
+  hourly_rate_cents: number;
+  tax_rate_bps: number;
+  tax_label: string;
+};
+
+export const defaultBillingSettings: BillingSettings = {
+  hourly_rate_cents: 20000, // $200/h
+  tax_rate_bps: 1300, // Ontario HST
+  tax_label: "HST (13%)",
+};
+
 export type OrgSettings = {
   ai_enabled: boolean;
   /** 'assigned_only' (default, ADR-0004): accountants see only their assigned
@@ -63,6 +80,8 @@ export type OrgSettings = {
   accountant_scope_mode: "all_read" | "assigned_only";
   /** Absent on orgs created before M5 — read via reminderSettings(). */
   reminders?: ReminderSettings;
+  /** Absent on orgs created before M7 — read via billingSettings(). */
+  billing?: Partial<BillingSettings>;
 };
 
 export const defaultOrgSettings: OrgSettings = {
@@ -74,6 +93,11 @@ export const defaultOrgSettings: OrgSettings = {
 /** Settings-with-defaults accessor — pre-M5 orgs have no `reminders` key. */
 export function reminderSettings(settings: OrgSettings): ReminderSettings {
   return { ...defaultReminderSettings, ...settings.reminders };
+}
+
+/** Settings-with-defaults accessor — pre-M7 orgs have no `billing` key. */
+export function billingSettings(settings: OrgSettings): BillingSettings {
+  return { ...defaultBillingSettings, ...settings.billing };
 }
 
 export const org = pgTable("org", {

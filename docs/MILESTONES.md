@@ -36,9 +36,15 @@
   ADR-0026) + in-person on staff device; executed PDF is a new immutable
   object under signed/ (ADR-0027). draft→sent→signed + immutability proven in
   e2e (m6.spec.ts), exact timestamp format in tests/esign.test.ts.)_
-- [ ] **M7 — CRA authorizations, AFR reconciliation, time & billing (basic),
+- [x] **M7 — CRA authorizations, AFR reconciliation, time & billing (basic),
   reporting.** ✅ Coverage dashboard correct vs seed; AFR compare works from
-  pasted CSV; invoice PDF generates.
+  pasted CSV; invoice PDF generates. _(All three proven as ACCEPTANCE tests in
+  e2e/m7.spec.ts: seeded coverage 3/9 with every state distinguished +
+  dashboard card count; AFR paste → on_file/untracked verdicts +
+  track-on-checklist; record time → INV-0002 → %PDF bytes over the staff
+  session. Coverage/expiry derivation ADR-0028, CSV parsing/matching
+  ADR-0029, integer-cents billing + snapshot invoicing ADR-0030. Reports
+  page at /app/reports.)_
 - [ ] **M8 — AI suite.** AiService + permission-scoped read tools, knowledge
   assistant, email drafts→Messaging drafts, meeting prep, audit risk
   (rules+narrative), optimization advisor, org AI toggle, ai_interaction
