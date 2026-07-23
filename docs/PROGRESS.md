@@ -262,6 +262,13 @@ _Last updated: 2026-07-22 (M5 complete — real-SMS live test pending Twilio cre
   via the sidebar — only the /app landing page isn't tailored. M10 build: a
   front-desk dashboard (documents in intake, firm-wide clients awaiting docs,
   recent portal activity).
+- **Dashboard "Documents outstanding" card is a stale pre-M3 placeholder**
+  (shows "—" + "Arrives in M3" though M3 shipped). Customer-noted
+  2026-07-22. M10 fix: wire it to the real missing-required-docs count
+  (listChecklistSummaries / listMissingChecklistItems already exist), scoped
+  firm-wide vs assigned like the rest of the dashboard, linking to the
+  Returns page. The M6 (signatures) and M7 (authorizations) cards beside it
+  are correctly still upcoming.
 - **Page detection quality is "good enough", deferred to M10 polish**
   (customer decision 2026-07-22, after the real-device run). jscanify's
   single Canny+Otsu pass misses low-contrast scenes — white paper on a pale
