@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, ilike, inArray, isNull, max, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, lte, max, ne, sql } from "drizzle-orm";
 import { db, schema } from ".";
 import { DEFAULT_ENGAGEMENT_STAGES, type StageCategory } from "./schema";
 import { DEFAULT_MESSAGE_TEMPLATES } from "@/lib/templates";
 import { computeTotals, linesFromEntries } from "@/lib/timebilling";
+import type { MappedClient } from "@/lib/imports";
 
 /**
  * Org-scoped repository layer — the ONLY sanctioned path to tenant data.
@@ -1923,6 +1924,474 @@ export class OrgScope {
         .orderBy(desc(schema.aiInteraction.createdAt))
         .limit(opts?.limit ?? 50);
     });
+  }
+
+  // ---- retention review (M9, ADR-0034) ---------------------------------------
+
+  /**
+   * Documents past the 7-year retention horizon, surfaced for owner/admin
+   * review. Only KEPT documents (status 'clean' — vault uploads + executed
+   * e-sign PDFs); quarantined/infected files aren't retention subjects. No
+   * mutation — the flow is read-only by design (ADR-0034).
+   */
+  async listRetentionReviewDocuments(before: Date) {
+    return this.tx((tx) =>
+      tx
+        .select({
+          id: schema.document.id,
+          filename: schema.document.filename,
+          source: schema.document.source,
+          createdAt: schema.document.createdAt,
+          clientId: schema.document.clientId,
+          clientName: schema.client.displayName,
+        })
+        .from(schema.document)
+        .innerJoin(schema.client, eq(schema.document.clientId, schema.client.id))
+        .where(
+          and(
+            eq(schema.document.orgId, this.orgId),
+            eq(schema.document.status, "clean"),
+            lte(schema.document.createdAt, before)
+          )
+        )
+        .orderBy(asc(schema.document.createdAt))
+    );
+  }
+
+  /** Count of kept documents for the retention posture card (total vs due). */
+  async countRetentionDocuments(before: Date): Promise<{ total: number; due: number }> {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select({
+          total: sql<number>`count(*)::int`,
+          due: sql<number>`count(*) filter (where created_at <= ${before})::int`,
+        })
+        .from(schema.document)
+        .where(and(eq(schema.document.orgId, this.orgId), eq(schema.document.status, "clean")));
+      return { total: rows[0]?.total ?? 0, due: rows[0]?.due ?? 0 };
+    });
+  }
+
+  // ---- generic import (M9, ADR-0033) -----------------------------------------
+
+  /**
+   * Persist a staged import batch: the batch header + one staging row per
+   * parsed CSV row, in one transaction. Staging rows already carry masked/
+   * encrypted SIN (buildStagedRows) — no plaintext SIN reaches the DB.
+   */
+  async createStagedImportBatch(batch: {
+    kind?: "clients";
+    filename: string;
+    sourceColumns: string[];
+    mapping: Record<string, string>;
+    rows: Array<{
+      rowNumber: number;
+      raw: Record<string, string>;
+      mapped: MappedClient;
+      warnings: string[];
+      action: "create" | "skip";
+    }>;
+    createdBy?: string | null;
+  }) {
+    return this.tx(async (tx) => {
+      const createCount = batch.rows.filter((r) => r.action === "create").length;
+      const warningCount = batch.rows.reduce((s, r) => s + r.warnings.length, 0);
+      const [header] = await tx
+        .insert(schema.importBatch)
+        .values({
+          orgId: this.orgId,
+          kind: batch.kind ?? "clients",
+          status: "staged",
+          filename: batch.filename,
+          sourceColumns: batch.sourceColumns,
+          mapping: batch.mapping,
+          rowCount: batch.rows.length,
+          createdCount: 0,
+          skippedCount: batch.rows.length - createCount,
+          warningCount,
+          createdBy: batch.createdBy ?? this.userId,
+        })
+        .returning();
+      if (batch.rows.length > 0) {
+        await tx.insert(schema.importStagingRow).values(
+          batch.rows.map((r) => ({
+            orgId: this.orgId,
+            batchId: header.id,
+            rowNumber: r.rowNumber,
+            raw: r.raw,
+            mapped: r.mapped as Record<string, unknown>,
+            warnings: r.warnings,
+            action: r.action,
+          }))
+        );
+      }
+      return header;
+    });
+  }
+
+  async getImportBatch(id: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.importBatch)
+        .where(and(eq(schema.importBatch.orgId, this.orgId), eq(schema.importBatch.id, id)));
+      return rows[0] ?? null;
+    });
+  }
+
+  async listImportBatches(limit = 25) {
+    return this.tx((tx) =>
+      tx
+        .select({ batch: schema.importBatch, createdByName: schema.staffUser.name })
+        .from(schema.importBatch)
+        .leftJoin(schema.staffUser, eq(schema.importBatch.createdBy, schema.staffUser.id))
+        .where(eq(schema.importBatch.orgId, this.orgId))
+        .orderBy(desc(schema.importBatch.createdAt))
+        .limit(limit)
+    );
+  }
+
+  async listStagingRows(batchId: string) {
+    return this.tx((tx) =>
+      tx
+        .select()
+        .from(schema.importStagingRow)
+        .where(
+          and(
+            eq(schema.importStagingRow.orgId, this.orgId),
+            eq(schema.importStagingRow.batchId, batchId)
+          )
+        )
+        .orderBy(asc(schema.importStagingRow.rowNumber))
+    );
+  }
+
+  /** Discard a still-staged batch (nothing was created). */
+  async deleteStagedImportBatch(id: string): Promise<"ok" | "not_found" | "not_staged"> {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.importBatch)
+        .where(and(eq(schema.importBatch.orgId, this.orgId), eq(schema.importBatch.id, id)));
+      const batch = rows[0];
+      if (!batch) return "not_found";
+      if (batch.status !== "staged") return "not_staged";
+      await tx
+        .delete(schema.importBatch)
+        .where(and(eq(schema.importBatch.orgId, this.orgId), eq(schema.importBatch.id, id)));
+      return "ok";
+    });
+  }
+
+  /**
+   * Commit a staged batch: create a client per 'create' staging row (SIN
+   * ciphertext copied straight across), stamp created_client_id, mark the
+   * batch committed. Assigned-accountant emails are resolved to staff ids
+   * here; a no-match appends a per-row warning and leaves the client
+   * unassigned. Atomic — a failure rolls the whole insert back.
+   */
+  async commitImportBatch(
+    batchId: string
+  ): Promise<
+    | { ok: false; reason: "not_found" | "not_staged" }
+    | { ok: true; createdCount: number; unresolvedAccountants: number }
+  > {
+    return this.tx(async (tx) => {
+      const batchRows = await tx
+        .select()
+        .from(schema.importBatch)
+        .where(and(eq(schema.importBatch.orgId, this.orgId), eq(schema.importBatch.id, batchId)));
+      const batch = batchRows[0];
+      if (!batch) return { ok: false as const, reason: "not_found" as const };
+      if (batch.status !== "staged") return { ok: false as const, reason: "not_staged" as const };
+
+      const staging = await tx
+        .select()
+        .from(schema.importStagingRow)
+        .where(
+          and(
+            eq(schema.importStagingRow.orgId, this.orgId),
+            eq(schema.importStagingRow.batchId, batchId),
+            eq(schema.importStagingRow.action, "create")
+          )
+        )
+        .orderBy(asc(schema.importStagingRow.rowNumber));
+
+      // Resolve assigned-accountant emails to staff ids (active members only).
+      const members = await tx
+        .select({ id: schema.staffUser.id, email: schema.staffUser.email })
+        .from(schema.orgMembership)
+        .innerJoin(schema.staffUser, eq(schema.orgMembership.userId, schema.staffUser.id))
+        .where(
+          and(
+            eq(schema.orgMembership.orgId, this.orgId),
+            eq(schema.orgMembership.status, "active")
+          )
+        );
+      const emailToId = new Map(members.map((m) => [m.email.toLowerCase(), m.id]));
+
+      let createdCount = 0;
+      let unresolvedAccountants = 0;
+      for (const row of staging) {
+        const m = row.mapped as MappedClient;
+        if (!m.displayName) continue;
+        let assignedAccountantId: string | null = null;
+        if (m.assignedAccountantEmail) {
+          assignedAccountantId = emailToId.get(m.assignedAccountantEmail) ?? null;
+          if (!assignedAccountantId) unresolvedAccountants++;
+        }
+        const [created] = await tx
+          .insert(schema.client)
+          .values({
+            orgId: this.orgId,
+            type: m.type,
+            displayName: m.displayName,
+            email: m.email,
+            phone: m.phone,
+            preferredChannel: m.preferredChannel,
+            addressLine1: m.addressLine1,
+            city: m.city,
+            province: m.province,
+            postalCode: m.postalCode,
+            dateOfBirth: m.dateOfBirth,
+            sinEncrypted: m.sinEncrypted,
+            sinLast3: m.sinLast3,
+            assignedAccountantId,
+            tags: m.tags ?? [],
+            customFields: m.customFields ?? {},
+            createdBy: this.userId,
+          })
+          .returning({ id: schema.client.id });
+
+        const extraWarnings =
+          m.assignedAccountantEmail && !assignedAccountantId
+            ? [`Assigned accountant "${m.assignedAccountantEmail}" isn't a staff member — imported unassigned.`]
+            : [];
+        await tx
+          .update(schema.importStagingRow)
+          .set({
+            createdClientId: created.id,
+            warnings: extraWarnings.length ? [...row.warnings, ...extraWarnings] : row.warnings,
+          })
+          .where(
+            and(
+              eq(schema.importStagingRow.orgId, this.orgId),
+              eq(schema.importStagingRow.id, row.id)
+            )
+          );
+        createdCount++;
+      }
+
+      await tx
+        .update(schema.importBatch)
+        .set({
+          status: "committed",
+          createdCount,
+          committedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(schema.importBatch.orgId, this.orgId), eq(schema.importBatch.id, batchId)));
+
+      return { ok: true as const, createdCount, unresolvedAccountants };
+    });
+  }
+
+  /**
+   * Client ids (within the given set) that have ANY dependent record — the
+   * rollback guard. One distinct-client_id probe per referencing table; the
+   * union is the blocked set. Small N (a batch's created clients), so the
+   * handful of round trips is fine.
+   */
+  private async clientsWithDependents(tx: Tx, ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    const org = this.orgId;
+    const probes = [
+      tx
+        .selectDistinct({ c: schema.engagement.clientId })
+        .from(schema.engagement)
+        .where(and(eq(schema.engagement.orgId, org), inArray(schema.engagement.clientId, ids))),
+      tx
+        .selectDistinct({ c: schema.document.clientId })
+        .from(schema.document)
+        .where(and(eq(schema.document.orgId, org), inArray(schema.document.clientId, ids))),
+      tx
+        .selectDistinct({ c: schema.clientNote.clientId })
+        .from(schema.clientNote)
+        .where(and(eq(schema.clientNote.orgId, org), inArray(schema.clientNote.clientId, ids))),
+      tx
+        .selectDistinct({ c: schema.contactLog.clientId })
+        .from(schema.contactLog)
+        .where(and(eq(schema.contactLog.orgId, org), inArray(schema.contactLog.clientId, ids))),
+      tx
+        .selectDistinct({ c: schema.message.clientId })
+        .from(schema.message)
+        .where(and(eq(schema.message.orgId, org), inArray(schema.message.clientId, ids))),
+      tx
+        .selectDistinct({ c: schema.craAuthorization.clientId })
+        .from(schema.craAuthorization)
+        .where(
+          and(eq(schema.craAuthorization.orgId, org), inArray(schema.craAuthorization.clientId, ids))
+        ),
+      tx
+        .selectDistinct({ c: schema.timeEntry.clientId })
+        .from(schema.timeEntry)
+        .where(and(eq(schema.timeEntry.orgId, org), inArray(schema.timeEntry.clientId, ids))),
+      tx
+        .selectDistinct({ c: schema.invoice.clientId })
+        .from(schema.invoice)
+        .where(and(eq(schema.invoice.orgId, org), inArray(schema.invoice.clientId, ids))),
+      tx
+        .selectDistinct({ c: schema.signatureRequest.clientId })
+        .from(schema.signatureRequest)
+        .where(
+          and(eq(schema.signatureRequest.orgId, org), inArray(schema.signatureRequest.clientId, ids))
+        ),
+      tx
+        .selectDistinct({ c: schema.portalToken.clientId })
+        .from(schema.portalToken)
+        .where(and(eq(schema.portalToken.orgId, org), inArray(schema.portalToken.clientId, ids))),
+    ];
+    const blocked = new Set<string>();
+    for (const probe of probes) {
+      const rows = await probe;
+      for (const r of rows) blocked.add(r.c);
+    }
+    return blocked;
+  }
+
+  /**
+   * Undo a committed batch: hard-delete exactly the clients it created that
+   * are still untouched. A client that gained dependents (engagements, docs,
+   * notes, …) since import is KEPT and reported — the batch then lands as
+   * 'partially_rolled_back' (ADR-0033). No other org data is affected.
+   */
+  async rollbackImportBatch(
+    batchId: string
+  ): Promise<
+    | { ok: false; reason: "not_found" | "not_committed" }
+    | { ok: true; removed: number; kept: Array<{ name: string }>; status: "rolled_back" | "partially_rolled_back" }
+  > {
+    return this.tx(async (tx) => {
+      const batchRows = await tx
+        .select()
+        .from(schema.importBatch)
+        .where(and(eq(schema.importBatch.orgId, this.orgId), eq(schema.importBatch.id, batchId)));
+      const batch = batchRows[0];
+      if (!batch) return { ok: false as const, reason: "not_found" as const };
+      if (batch.status !== "committed" && batch.status !== "partially_rolled_back") {
+        return { ok: false as const, reason: "not_committed" as const };
+      }
+
+      const staging = await tx
+        .select({
+          id: schema.importStagingRow.id,
+          createdClientId: schema.importStagingRow.createdClientId,
+        })
+        .from(schema.importStagingRow)
+        .where(
+          and(
+            eq(schema.importStagingRow.orgId, this.orgId),
+            eq(schema.importStagingRow.batchId, batchId)
+          )
+        );
+      const createdIds = staging
+        .map((r) => r.createdClientId)
+        .filter((v): v is string => v !== null);
+      if (createdIds.length === 0) {
+        await tx
+          .update(schema.importBatch)
+          .set({ status: "rolled_back", rolledBackAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(schema.importBatch.orgId, this.orgId), eq(schema.importBatch.id, batchId)));
+        return { ok: true as const, removed: 0, kept: [], status: "rolled_back" as const };
+      }
+
+      const blocked = await this.clientsWithDependents(tx, createdIds);
+      const deletable = createdIds.filter((id) => !blocked.has(id));
+      const keptIds = createdIds.filter((id) => blocked.has(id));
+
+      const kept: Array<{ name: string }> = [];
+      if (keptIds.length > 0) {
+        const keptRows = await tx
+          .select({ name: schema.client.displayName })
+          .from(schema.client)
+          .where(
+            and(eq(schema.client.orgId, this.orgId), inArray(schema.client.id, keptIds))
+          );
+        for (const r of keptRows) kept.push({ name: r.name });
+      }
+
+      if (deletable.length > 0) {
+        // FK on staging.created_client_id is ON DELETE SET NULL, so the
+        // staging rows' pointers clear automatically as the clients go.
+        await tx
+          .delete(schema.client)
+          .where(
+            and(eq(schema.client.orgId, this.orgId), inArray(schema.client.id, deletable))
+          );
+      }
+
+      const status: "rolled_back" | "partially_rolled_back" =
+        keptIds.length > 0 ? "partially_rolled_back" : "rolled_back";
+      await tx
+        .update(schema.importBatch)
+        .set({ status, rolledBackAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(schema.importBatch.orgId, this.orgId), eq(schema.importBatch.id, batchId)));
+
+      return { ok: true as const, removed: deletable.length, kept, status };
+    });
+  }
+
+  // ---- import mapping templates (M9) -----------------------------------------
+
+  async listImportMappingTemplates() {
+    return this.tx((tx) =>
+      tx
+        .select()
+        .from(schema.importMappingTemplate)
+        .where(eq(schema.importMappingTemplate.orgId, this.orgId))
+        .orderBy(asc(schema.importMappingTemplate.name))
+    );
+  }
+
+  /** Save-or-replace a mapping template by name (unique per org). */
+  async upsertImportMappingTemplate(name: string, mapping: Record<string, string>) {
+    return this.tx(async (tx) => {
+      const existing = await tx
+        .select()
+        .from(schema.importMappingTemplate)
+        .where(
+          and(
+            eq(schema.importMappingTemplate.orgId, this.orgId),
+            eq(schema.importMappingTemplate.name, name)
+          )
+        );
+      if (existing[0]) {
+        const [row] = await tx
+          .update(schema.importMappingTemplate)
+          .set({ mapping, updatedAt: new Date() })
+          .where(eq(schema.importMappingTemplate.id, existing[0].id))
+          .returning();
+        return row;
+      }
+      const [row] = await tx
+        .insert(schema.importMappingTemplate)
+        .values({ orgId: this.orgId, name, mapping, createdBy: this.userId })
+        .returning();
+      return row;
+    });
+  }
+
+  async deleteImportMappingTemplate(id: string) {
+    return this.tx((tx) =>
+      tx
+        .delete(schema.importMappingTemplate)
+        .where(
+          and(
+            eq(schema.importMappingTemplate.orgId, this.orgId),
+            eq(schema.importMappingTemplate.id, id)
+          )
+        )
+    );
   }
 }
 

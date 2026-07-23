@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-23 (M8 AI suite complete — 172 Vitest / 28 Playwright green)_
+_Last updated: 2026-07-23 (M9 hardening + import complete — 206 Vitest / 31 Playwright green)_
 
 ## DONE
 - **M0 — Foundation** (commit `M0: ...`): scaffold, RLS + OrgScope, better-auth
@@ -347,9 +347,65 @@ _Last updated: 2026-07-23 (M8 AI suite complete — 172 Vitest / 28 Playwright g
     draft assertion anchors on "Daycare receipts" (the one Ruth item no
     earlier spec satisfies). Production build verified.
 
+- **M9 — Hardening + generic data import** (this commit):
+  - Schema + FORCEd RLS (0025/0026): import_batch (kind/status/filename/
+    source_columns/mapping snapshot/counts), import_staging_row (raw cells
+    with the SIN cell MASKED, mapped projection carrying SIN as
+    ciphertext+last3 only, per-row warnings, action create/skip,
+    created_client_id set-null FK), import_mapping_template (unique name per
+    org). RLS verified enabled+forced with tenant policies.
+  - Import core (src/lib/imports.ts, ADR-0033): full state-machine CSV parser
+    (quoted newlines/commas, BOM, delimiter auto-detect); target-field
+    registry with header aliases; suggestMapping (unknown headers →
+    custom:<header>, never dropped); buildStagedRows — per-field normalise
+    (type/channel synonyms, E.164 phone, postal format, DOB formats w/
+    ambiguity note, tags split) + per-row warnings; THE ONLY place SIN
+    plaintext exists: Luhn-check → encryptField immediately; nameless rows
+    skip. SAMPLE_IMPORT_CSV is the deliberately-messy fixture the wizard's
+    "Load sample" and the e2e use.
+  - OrgScope: createStagedImportBatch, get/list batches, listStagingRows,
+    deleteStagedImportBatch, commitImportBatch (atomic; resolves
+    assigned-accountant emails to active members, no-match → warning +
+    unassigned), rollbackImportBatch (dependency-guarded: deletes only
+    created clients with NO dependents across 10 referencing tables; touched
+    ones kept + reported → partially_rolled_back), mapping-template
+    upsert/list/delete, listRetentionReviewDocuments/countRetentionDocuments.
+  - Permissions: new `import.manage` — owner/admin allow, accountant/clerk
+    deny, NOT grace-allowed (ADR-0033; default chosen when the scoping
+    question went unanswered). All wizard mutations audited
+    (import_stage/commit/rollback ops in details).
+  - UI: Settings → Data import (4-step wizard: upload/paste w/ file reader →
+    map columns w/ sample values, saved-template load/save, custom-field
+    marking → review table w/ warnings + custom columns + encrypted-SIN badge
+    → done w/ "Undo this import"); recent-batches table; clerk/accountant get
+    a friendly denial page. Settings → Retention review (ADR-0034):
+    counts + posture explainer + past-horizon table (read-only, no delete).
+    /app/documents/bulk (ADR-0035): many-files-to-one-client drag/drop over
+    the EXISTING /api/vault/upload pipeline, concurrency 3, per-file
+    scan-status polling; linked from intake + import pages.
+  - Hardening: tests/redteam.test.ts — deliberate cross-org probes through
+    OrgScope reads AND writes, the permission layer (TenancyViolationError +
+    audit), the AI read tools (no existence leak, no SIN in any payload), and
+    raw app-role SQL across 11 tenant tables incl. the import trio (zero rows
+    w/o GUC, org-B scope can't see org A, cross-org INSERT rejected);
+    dependency audit → pnpm.overrides (esbuild ≥0.25, postcss ≥8.5.10,
+    sharp ≥0.35) → **pnpm audit: No known vulnerabilities**; scripts/backup.ts
+    (pg_dump -Fc → S3, --dry-run, PG_DUMP override; verified locally, 0.29 MB
+    dump on PG17); scripts/cleanup-orphaned-s3.ts (deleted-org prefix sweep,
+    dry-run default); backups/ gitignored. §6 evidence table in TESTING.md.
+  - Seed: 2 import mapping templates ("Old software export" for Lakeside +
+    an org-2 isolation row).
+  - Tests: 206 Vitest (34 new: imports.test.ts 16 — parser/mapping/
+    validation/SIN-safety/commit/partial-rollback/isolation/RLS/matrix;
+    redteam.test.ts 15; retention.test.ts 3) + 31 Playwright (3 new in
+    m9.spec.ts, incl. the ACCEPTANCE: messy CSV → warnings + skipped row →
+    custom field visible on the client page + SIN stored encrypted/masked →
+    rollback restores the exact pre-import state). Production build verified
+    (incl. after the dependency-override bumps).
+
 ## IN PROGRESS
-- Nothing — stopped at the M8 boundary. Next milestone is M9 (hardening +
-  generic data import).
+- Nothing — stopped at the M9 boundary. Next milestone is M10 (polish +
+  deploy).
 - **Flagging Satinder (M6 real-device checks, optional):** the whole flow is
   proven in e2e (in-person draft→sent→signed, immutable executed PDF). The
   remaining human check is REMOTE signing on a real phone through a tunnel:
@@ -394,12 +450,14 @@ _Last updated: 2026-07-23 (M8 AI suite complete — 172 Vitest / 28 Playwright g
 - Host antivirus (Norton) can blacklist upload URLs after seeing EICAR-like
   content on localhost — see TESTING.md before renaming /api/vault/upload
   or adding AV-test uploads.
-- Vault documents have no delete path (7-year retention posture); M9 adds
-  the retention/review flow. Quarantined (infected/scan_failed) files are
-  deletable via documents.manage.
-- Deleting an org cascades DB rows but leaves S3 objects under
-  org/{orgId}/ — S3 lifecycle/cleanup lands with the M9 backup/retention
-  scripts.
+- ~~Vault documents have no delete path; M9 adds the retention flow~~ DONE
+  (M9, ADR-0034): the no-delete posture is deliberate and permanent; the
+  retention REVIEW surface is Settings → Retention review. Quarantined
+  (infected/scan_failed) files remain deletable via documents.manage.
+- ~~Deleting an org leaves S3 objects under org/{orgId}/~~ DONE (M9):
+  `pnpm s3:cleanup` (scripts/cleanup-orphaned-s3.ts) sweeps deleted-org
+  prefixes; dry-run by default. Run it after any org deletion (or on a
+  schedule in production).
 - Google-only accounts still can't enroll TOTP (twoFactor.enable needs a
   password). Candidate fix in a later milestone: better-auth setPassword
   path for OAuth-only accounts.
@@ -512,17 +570,17 @@ _Last updated: 2026-07-23 (M8 AI suite complete — 172 Vitest / 28 Playwright g
 - AWS budget alarm skipped for now (new account on free credits with
   automatic credit-exhaustion notifications).
 
-## NEXT 3 CONCRETE STEPS (M9 — hardening + generic data import)
-1. Security hardening pass per the spec's §6 checklist with evidence
-   recorded in TESTING.md: dependency audit (pnpm audit + review),
-   tenancy-isolation red-team tests (deliberate cross-org probes through
-   every surface incl. the AI tools), backup script, retention/review job
-   (vault + executed PDFs have no delete path by design — M9 builds the
-   7-year retention flow), S3 lifecycle/cleanup for deleted orgs.
-2. Generic import wizard: messy-CSV column mapping onto client/custom
-   fields (import_batch, import_mapping_template, staging tables per
-   DATA_MODEL "Planned"), warnings surfaced, rollback restores clean state.
-3. Bulk document importer.
+## NEXT 3 CONCRETE STEPS (M10 — polish + deploy)
+1. Backlogged polish, all customer-noted: front-desk (clerk) dashboard
+   variant; wire the stale "Documents outstanding" dashboard card; jscanify
+   capture-quality improvements (drag-corners, auto-capture, multi-strategy
+   detector); pixel-accurate e-sign placement (pdf.js overlay); AI usage log
+   staff viewer; empty/error/loading states + print styles.
+2. Deployment runbook: SES production access + firm-domain DKIM/SPF/DMARC
+   (see KNOWN BUGS), KMS key, Twilio webhook on the public URL, backup
+   schedule (pnpm backup), Stripe live keys, marketing/pricing stub.
+3. Final E2E sweep + demo walkthrough script (acceptance: walkthrough
+   executes cleanly).
 
 M8 leftovers worth knowing:
 - **Real-model path VERIFIED (2026-07-23).** A real ANTHROPIC_API_KEY was

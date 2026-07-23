@@ -63,6 +63,11 @@ export const ACTIONS = [
   // read tools behind it re-check the caller's own view permissions, so an
   // answer can never contain more than the asker could see in the UI.
   "ai.use",
+  // data import (M9): run the generic import wizard + bulk document importer.
+  // Owner/admin only — a firm-wide bulk load that touches SIN is a
+  // manager-level operation (ADR-0033); clerks already can't export
+  // SIN-bearing data, and accountants create clients one at a time.
+  "import.manage",
   // audit
   "audit.view",
 ] as const;
@@ -104,6 +109,7 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "messages.manage_templates": "allow",
     "messages.send_custom": "allow",
     "ai.use": "allow",
+    "import.manage": "allow",
     "audit.view": "allow",
   },
   admin: {
@@ -136,6 +142,7 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "messages.manage_templates": "allow",
     "messages.send_custom": "allow",
     "ai.use": "allow",
+    "import.manage": "allow",
     "audit.view": "allow",
   },
   accountant: {
@@ -168,6 +175,7 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "messages.manage_templates": "deny",
     "messages.send_custom": "assigned",
     "ai.use": "allow",
+    "import.manage": "deny",
     "audit.view": "deny",
   },
   clerk: {
@@ -200,6 +208,7 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "messages.manage_templates": "deny",
     "messages.send_custom": "deny",
     "ai.use": "allow",
+    "import.manage": "deny",
     "audit.view": "deny",
   },
 };

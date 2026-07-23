@@ -331,6 +331,36 @@ SIN/DOB can never appear: the tool layer builds payloads field-by-field
 (sin/dob columns unselected) and scrubs SIN-shaped digit runs from staff
 free text before it reaches a prompt.
 
+## Generic import (M9, RLS FORCEd — drizzle/0026_m9_rls.sql)
+
+### import_batch
+The unit of work AND of rollback (ADR-0033).
+| field | type | notes |
+|---|---|---|
+| kind | enum import_kind | 'clients' (extensible) |
+| status | enum import_status | staged → committed → rolled_back / partially_rolled_back |
+| filename | text | display name of the source ("Imported CSV") |
+| source_columns | text[] | detected headers, source order |
+| mapping | jsonb | source-header → target-field snapshot used to stage |
+| row_count, created_count, skipped_count, warning_count | int | |
+| committed_at, rolled_back_at | timestamptz | |
+| created_by | text FK staff_user | |
+
+### import_staging_row
+| field | type | notes |
+|---|---|---|
+| batch_id | uuid FK import_batch (cascade) | |
+| row_number | int | 1-based data-row number (header excluded) |
+| raw | jsonb | source cells by header — the SIN-mapped cell is MASKED |
+| mapped | jsonb | normalised target values; `sinEncrypted`/`sinLast3` only — plaintext SIN never persists (ADR-0033) |
+| warnings | text[] | per-row validation messages |
+| action | enum import_row_action | create / skip (nameless rows) |
+| created_client_id | uuid FK client (set null) | stamped at commit; drives rollback |
+
+### import_mapping_template
+Reusable source-header → target-field map. org_id, name (unique per org),
+kind, mapping jsonb, created_by.
+
 ## Enums
 subscription_status: trialing, active, past_due, canceled
 staff_role: owner, admin, accountant, clerk
@@ -356,8 +386,11 @@ authorization_level: level1, level2, level3
 authorization_status: pending, active, expired, revoked
 invoice_status: draft, sent, paid, void
 ai_feature: assistant, email_draft, meeting_prep, audit_risk, optimize
+import_kind: clients
+import_status: staged, committed, rolled_back, partially_rolled_back
+import_row_action: create, skip
 
 ## Planned (added at their milestone; spec §3)
-import_batch, import_mapping_template, staging tables (M9).
-(trusted_helper is folded into portal_token — is_helper/include_household;
-ai_interaction landed at M8.)
+All spec-planned tables have landed. (trusted_helper folded into
+portal_token — is_helper/include_household; ai_interaction at M8; the import
+trio at M9.)

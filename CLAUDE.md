@@ -58,6 +58,8 @@ Vitest + Playwright.
   postgres, or native with postgres/postgres superuser).
 - `pnpm dev` · `pnpm build` · `pnpm typecheck` · `pnpm lint`
 - `pnpm db:generate --name x` · `pnpm db:migrate` · `pnpm db:seed` · `pnpm db:reset`
+- `pnpm backup` (pg_dump→S3; --dry-run; PG_DUMP=path if not on PATH) ·
+  `pnpm s3:cleanup` (deleted-org S3 sweep; dry-run unless --apply)
 - `pnpm test` (Vitest; needs migrated DB) · `pnpm test:e2e` (Playwright; needs
   seeded DB — e2e enrolls 2FA for the clerk user, reseed to reset)
 

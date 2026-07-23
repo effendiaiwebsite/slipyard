@@ -303,6 +303,77 @@ Tenancy isolation · permissions · tokens · presign (M3) · Stripe webhooks
   explicit "Send via Messaging" click creates exactly one manual message +
   outbox row with the edited subject.
 
+## Automated coverage (M9)
+- `tests/imports.test.ts` — CSV parsing (delimiter auto-detect, quoted
+  fields with embedded commas/newlines, blank-row drop); mapping suggestion
+  (aliases → targets, unknowns → custom fields); row validation on the messy
+  sample (invalid SIN/email/DOB flagged, nameless row skipped, postal/phone/
+  type normalised, custom fields captured); **SIN safety** (a valid SIN is
+  encrypted + decrypts back, the raw cell is masked, and the entire staged
+  payload contains NO plaintext SIN); OrgScope commit (creates clients +
+  custom fields, refuses a second commit), full rollback (removes exactly the
+  created clients), **dependency-guarded partial rollback** (a client touched
+  by a note is KEPT, status partially_rolled_back), assigned-accountant email
+  resolution + no-match flagging; tenant isolation (org B sees no batch/
+  staging/template; raw app-role SQL sees zero import rows without a GUC);
+  mapping-template upsert/list/delete; import.manage matrix (owner/admin only,
+  not grace-allowed).
+- `tests/redteam.test.ts` — **the §6 tenancy red-team**: deliberate cross-org
+  probes through every surface. Org B's OrgScope can't read (getClient/
+  Engagement/Document/Authorization/ImportBatch → null; listStagingRows/
+  templates → empty) or mutate (updateClient/Document → null; commit/rollback/
+  discard of org A's batches → not_found) any org A row; the permission layer
+  throws TenancyViolationError on a foreign-org ResourceRef and audits
+  `tenancy_violation:*`; the AI read tools for org B never surface an org A
+  client and return the not-found shape (no existence leak) with no SIN in any
+  payload; raw app-role SQL sees zero rows across 11 tenant tables (incl. the
+  three import tables + ai_interaction) without a GUC, can't see org A rows
+  when scoped to org B, and a cross-org import_batch INSERT is rejected by
+  WITH CHECK; S3 keys embed org/{orgId}/.
+- `tests/retention.test.ts` — 7-year horizon math (cutoff, at/older flagged,
+  held-years floor).
+- `e2e/m9.spec.ts` — **ACCEPTANCE**: an owner uploads the messy sample CSV in
+  the import wizard, maps a column to a custom field, previews (warnings for
+  the invalid SIN/email/date, the nameless row skipped), imports; the new
+  clients appear in the Clients grid with the custom field on the detail page
+  and the SIN stored masked; then "Undo this import" rolls the batch back and
+  the Clients grid returns to its pre-import state. Also: a clerk is denied the
+  import wizard (owner/admin only), and the bulk document uploader lists a
+  client picker + drop zone.
+
+## Security hardening checklist (M9, §6)
+The §1 priority areas (tenancy · permissions · tokens · presign · webhooks),
+now with M9 evidence. All green as of 2026-07-23.
+- **Tenancy isolation** — RLS FORCEd on every tenant table (incl. the three M9
+  import tables, verified enabled+forced with policies); scoped-repository +
+  permission-layer + raw-SQL layers each probed adversarially in
+  `tests/tenancy.test.ts` + `tests/redteam.test.ts`. No cross-org read, write,
+  or existence leak survives — through OrgScope, the AI tools, or raw app-role
+  SQL.
+- **Permissions** — single matrix; every mutation via `authorize()` →
+  `audit_log`; `import.manage` added (owner/admin only, not grace-allowed),
+  matrix-tested. Cross-org ResourceRef is a hard `TenancyViolationError`, never
+  a soft deny.
+- **SIN** — AES-256-GCM app-layer, masked display, never logged/exported; the
+  import path additionally proven never to persist plaintext SIN (staging
+  stores ciphertext + last-3 only; the raw snapshot masks the cell).
+- **Tokens** — sha256-only at rest (invites, portal magic links), durable OTP
+  caps; covered in `tests/invites.test.ts` / `tests/portal.test.ts`.
+- **Presign / storage** — 5-min presigned GETs, clean docs only, never logged;
+  S3 keys org-scoped (asserted in the red-team). Bulk upload reuses the same
+  gated pipeline (ADR-0035).
+- **Webhooks** — Stripe + Twilio signature-verified + idempotent
+  (`tests/billing.test.ts` / `tests/messaging.test.ts`).
+- **Dependency audit** — `pnpm audit` → **No known vulnerabilities found**
+  (2026-07-23). Three transitive advisories (esbuild via drizzle-kit, postcss
+  + sharp via next) resolved with `pnpm.overrides` bumping them to patched
+  versions (esbuild ≥0.25, postcss ≥8.5.10, sharp ≥0.35); production build
+  re-verified green after the bump.
+- **Backups / retention / lifecycle** — `scripts/backup.ts` (pg_dump -Fc → S3,
+  --dry-run; verified against the dev DB), retention REVIEW surface (no
+  auto-delete, ADR-0034), `scripts/cleanup-orphaned-s3.ts` (deleted-org prefix
+  sweep, dry-run by default).
+
 ## Manual checklist — M5 (pending Twilio/SES credentials)
 With real keys in .env (TWILIO_* trio; EMAIL_MODE=ses + verified
 SES_FROM_ADDRESS):

@@ -390,3 +390,71 @@ identical data yields identical findings with or without a model key, and
 the rules are unit-tested as plain functions. Findings render with their
 rule id beside the narrative; nothing is stored on the client record
 (same stateless posture as AFR, ADR-0029).
+
+## ADR-0033 (2026-07-23) — Generic import: staged batches, SIN-safe staging, dependency-guarded rollback
+The import wizard bulk-loads a messy client CSV onto client rows + per-firm
+custom_fields (DATA_MODEL "Planned": import_batch / import_staging_row /
+import_mapping_template, all FORCEd RLS — drizzle/0025+0026). The pipeline is
+pure→persisted→committed: parseCsv (a full state-machine parser handling
+quoted newlines/delimiters) → suggestMapping (header aliases; unmatched
+columns become custom:<header>, never silently dropped) → buildStagedRows
+(per-field normalise + per-row warnings: invalid email/SIN/DOB, unknown
+type/channel/province, nameless rows skipped). A batch is BOTH the unit of
+work and the unit of rollback.
+- **SIN never persists as plaintext** (iron rule). buildStagedRows is the only
+  place the SIN plaintext is touched: it is Luhn-checked and AES-256-GCM
+  encrypted there, so the staged `mapped` carries only ciphertext + last-3
+  mask and the `raw` snapshot masks that cell. Re-mapping re-stages from the
+  client-held CSV (old staging discarded), so no plaintext ever reaches the
+  DB, logs, or the browser preview.
+- **Commit is atomic**: one transaction creates a client per 'create' row
+  (ciphertext copied straight over), resolves any assigned-accountant email to
+  a staff id (a no-match becomes a per-row warning + unassigned), stamps
+  created_client_id, marks the batch committed.
+- **Rollback is dependency-guarded** (the chosen default): it hard-deletes
+  exactly the clients the batch created that are still UNTOUCHED; a client
+  that has since gained an engagement/document/note/contact/message/auth/time/
+  invoice/signature/portal-token is KEPT and reported, and the batch lands as
+  'partially_rolled_back'. No other org data is affected. (The alternative —
+  cascade-delete everything the batch made regardless of later work — was
+  rejected as too destructive for an undo.)
+- **Permission**: new `import.manage` — owner/admin ALLOW, accountant/clerk
+  DENY, NOT grace-allowed. A firm-wide bulk load that touches SIN is a
+  manager-level operation; clerks already can't export SIN-bearing data and
+  accountants create clients one at a time. (Default chosen when the operator
+  left the scoping question unanswered; revisit if a firm wants accountants to
+  self-serve imports.)
+
+## ADR-0034 (2026-07-23) — Retention is review-only; backups + S3 lifecycle are the delete story
+Canadian practice keeps client records seven years. The product's posture is
+DELETE-FREE by design (ADR-0016/0027: vault docs + executed PDFs have no
+delete path), so the "retention flow" is not a purge job — it is a REVIEW
+surface (src/lib/retention.ts + /app/settings/retention) listing clean
+documents created on/before the 7-year horizon so an owner/admin can act
+deliberately and on the record. Disposal, if it ever happens, stays a manual
+audited act — never automatic. Two independent safety nets sit beside it:
+- `scripts/backup.ts` — pg_dump custom-format (-Fc) to ./backups/, optional
+  upload to s3://{bucket}/backups/{db}/ (same ca-central-1 + KMS posture as the
+  vault). `--dry-run` verifies pg_dump reachability and prints a
+  credential-redacted plan; `PG_DUMP` overrides the binary path. Production
+  schedules it; the script is the portable, reviewable core. Verified locally
+  against the dev DB (0.29 MB dump, PostgreSQL 17).
+- `scripts/cleanup-orphaned-s3.ts` — the ONE cleanup path. Deleting a firm
+  cascades its Postgres rows but leaves org/{orgId}/ objects in S3; this sweep
+  diffs the bucket's org prefixes against live orgs and removes objects only
+  under prefixes whose org no longer exists. Dry-run by default; --apply to
+  delete. It can never touch a live tenant's data.
+
+## ADR-0035 (2026-07-23) — Bulk document importer reuses the intake pipeline
+The bulk document importer (/app/documents/bulk) is many-files-to-one-client
+drag/drop, and it adds NO new server surface: each file POSTs to the existing
+/api/vault/upload (quarantine → ClamAV → vault, ADR-0016/0021), so the scan,
+storage, and permission rules are byte-identical to a single intake upload.
+Permission is therefore `documents.intake_upload` (clerks included — bulk
+intake is front-desk work), NOT import.manage; filing to a return still
+happens afterward under documents.manage on the intake queue / client page.
+The client component caps concurrency (3) and shows per-file status by polling
+/api/vault/scan-status, exactly as the single-file intake form does. (The
+alternative manifest-CSV mapping of filenames→clients was deferred — the
+drop-to-one-client flow is the smallest correct build and covers the firm's
+migration need; add a manifest mode if a customer asks.)

@@ -54,6 +54,26 @@ export default async function SettingsPage() {
             </Card>
           </Link>
         )}
+        {can(ctx.actor, "import.manage") && (
+          <Link href="/app/settings/import" className="group">
+            <Card className="transition group-hover:border-slate-300">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">Data import →</CardTitle>
+                <CardDescription>Bulk-load clients from a CSV; map columns, review, undo.</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
+        {can(ctx.actor, "documents.view") && (
+          <Link href="/app/settings/retention" className="group">
+            <Card className="transition group-hover:border-slate-300">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">Retention review →</CardTitle>
+                <CardDescription>Documents past the 7-year horizon, flagged for review.</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
       </div>
 
       <Card>
@@ -81,9 +101,7 @@ export default async function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium">Coming later</CardTitle>
-          <CardDescription>
-            Checklist templates · Retention policy (M9) · Data import wizard (M9)
-          </CardDescription>
+          <CardDescription>Checklist templates · Firm-wide billing defaults</CardDescription>
         </CardHeader>
       </Card>
     </div>

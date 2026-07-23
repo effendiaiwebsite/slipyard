@@ -675,6 +675,30 @@ async function main() {
     { id: "7e000002-0000-4000-8000-000000000001", orgId: SEED.org2, clientId: c.northClient, userId: u.northOwner, workDate: "2026-07-15", minutes: 45, description: "Intake call", rateCents: 15000, createdBy: u.northOwner },
   ]);
 
+  // Import mapping templates (M9) — a saved column map per org so the wizard
+  // has something to "Load"; also proves per-org isolation of templates.
+  await db.insert(schema.importMappingTemplate).values([
+    {
+      orgId: SEED.org1,
+      name: "Old software export",
+      createdBy: u.joey,
+      mapping: {
+        Name: "displayName",
+        "Client Type": "type",
+        Email: "email",
+        Phone: "phone",
+        Province: "province",
+        Postal: "postalCode",
+        DOB: "dateOfBirth",
+        SIN: "sin",
+        Tags: "tags",
+        "Referral Source": "custom:Referral Source",
+      },
+    },
+    // Org 2 — isolation; must never surface in Lakeside's wizard.
+    { orgId: SEED.org2, name: "Northern intake sheet", createdBy: u.northOwner, mapping: { Name: "displayName" } },
+  ]);
+
   await db.insert(schema.auditLog).values({
     orgId: SEED.org1,
     actorType: "system",
@@ -686,7 +710,7 @@ async function main() {
 
   await pool.end();
 
-  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements, 7 documents, 11 checklist items, 3 portal tokens, 6 message templates, 2 signature requests, 7 CRA authorizations, 7 time entries, 2 invoices.");
+  console.log("Seeded 2 orgs, 5 staff users, 11 clients, 9 engagements, 7 documents, 11 checklist items, 3 portal tokens, 6 message templates, 2 signature requests, 7 CRA authorizations, 7 time entries, 2 invoices, 2 import mapping templates.");
   console.log("Dev logins (all password: %s):", SEED.password);
   for (const s of staff) console.log(`  ${s.role.padEnd(10)} ${s.email}  (${s.orgId === SEED.org1 ? "Lakeside CPA" : "Northern Tax"})`);
   console.log("First login will require TOTP enrollment (mandatory 2FA).");

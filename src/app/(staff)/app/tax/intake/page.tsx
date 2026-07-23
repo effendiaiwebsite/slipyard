@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ENGAGEMENT_TYPE_LABELS, viewAssignedOnlyFilter } from "@/lib/clients";
 import { requireStaff } from "@/lib/context";
@@ -35,12 +36,22 @@ export default async function IntakePage() {
 
   return (
     <div className="p-6 space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Document intake</h1>
-        <p className="text-sm text-slate-500 mt-0.5">
-          Everything uploaded lands in quarantine, gets virus-scanned, and waits here until it&apos;s
-          filed against a return.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Document intake</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Everything uploaded lands in quarantine, gets virus-scanned, and waits here until it&apos;s
+            filed against a return.
+          </p>
+        </div>
+        {canUpload && (
+          <Link
+            href="/app/documents/bulk"
+            className="text-sm text-indigo-600 hover:underline whitespace-nowrap"
+          >
+            Bulk upload for one client →
+          </Link>
+        )}
       </div>
 
       {canUpload && (

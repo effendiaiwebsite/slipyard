@@ -57,11 +57,19 @@
   tests/ai.test.ts; zero-write proven by table-count snapshot across every
   tool + feature; draft-then-explicit-send proven in e2e (no message/outbox
   rows until the human clicks Send).)_
-- [ ] **M9 — Hardening + generic data import.** §6 checklist with evidence in
+- [x] **M9 — Hardening + generic data import.** §6 checklist with evidence in
   TESTING.md, dependency audit, backup script, retention job,
   tenancy-isolation red-team tests; full import wizard + bulk document
   importer. ✅ All security checks green; messy sample CSV imports with
   correct warnings, custom fields visible, rollback restores clean state.
+  _(Red-team suite (tests/redteam.test.ts) probes every tenant surface incl.
+  the AI tools + the three new import tables; pnpm audit clean after
+  pnpm.overrides; scripts/backup.ts verified against the dev DB; retention is
+  review-only by design (ADR-0034); scripts/cleanup-orphaned-s3.ts sweeps
+  deleted-org prefixes. Import wizard (ADR-0033): staged batches, SIN
+  encrypted at staging (never plaintext at rest), custom fields from unmapped
+  columns, dependency-guarded rollback — ACCEPTANCE proven in e2e/m9.spec.ts.
+  Bulk document importer reuses the intake pipeline (ADR-0035).)_
 - [ ] **M10 — Polish + deploy.** Empty/error/loading states, print styles,
   marketing/pricing stub, deployment runbook, final E2E sweep, demo
   walkthrough script. ✅ Walkthrough executes cleanly.

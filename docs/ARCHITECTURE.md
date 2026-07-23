@@ -148,6 +148,19 @@ output. The email drafter's send button is an ordinary M5 manual send
 (messages.send_custom) the human triggers after editing — the AI has no
 path to it. Per-org kill switch: org.settings.ai_enabled.
 
+**Generic import (M9, ADR-0033)** — owner/admin only (import.manage, audited).
+The wizard (/app/settings/import) parses a pasted/uploaded CSV in memory,
+suggests a source→target mapping (unknown headers become custom fields, never
+dropped), then stages: buildStagedRows normalises + warns per row and is the
+ONLY code that touches SIN plaintext — it Luhn-checks and AES-encrypts there,
+so staging rows persist ciphertext + last-3 only and the raw snapshot masks
+the cell. Commit atomically creates a client per 'create' row (stamping
+created_client_id); rollback deletes exactly the created clients that are
+still dependent-free — touched clients are kept and reported
+(partially_rolled_back). Mapping templates are saved per org. The bulk
+document importer (/app/documents/bulk, ADR-0035) is a many-files-to-one-client
+front end over the EXISTING /api/vault/upload pipeline — no new server surface.
+
 **Stripe webhooks (M1)** — signature-verified, idempotent handlers for
 checkout.session.completed, customer.subscription.updated/deleted.
 
@@ -161,8 +174,17 @@ checkout.session.completed, customer.subscription.updated/deleted.
 - CSRF: better-auth handles auth routes; staff mutations (M1+) will use
   server actions/route handlers with origin checks.
 
-## Backups & retention (runbook lands with M9's scripts/backup.ts)
+## Backups & retention (M9, ADR-0034)
 
-Planned: scheduled pg_dump to S3 (versioned, ca-central-1) + S3 cross-region
-replication; 7-year retention job flags for admin review — no auto-delete.
-Documents immutable after `filed`.
+- `scripts/backup.ts` (`pnpm backup`): pg_dump custom-format (-Fc) →
+  ./backups/, optional upload to s3://{bucket}/backups/{db}/ (versioned,
+  ca-central-1, same KMS posture as the vault). `--dry-run` prints a
+  credential-redacted plan and verifies pg_dump; `PG_DUMP` env sets the binary
+  path. Production schedules it (cron / managed backup).
+- **Retention is review-only**: vault docs + executed PDFs have no delete path
+  (ADR-0016/0027); /app/settings/retention lists clean documents past the
+  7-year horizon (src/lib/retention.ts) for deliberate admin review. Nothing
+  is ever auto-deleted.
+- `scripts/cleanup-orphaned-s3.ts` (`pnpm s3:cleanup`): removes org/{orgId}/
+  objects whose org no longer exists in the DB (deleted firms). Dry-run by
+  default; `--apply` deletes. Can never touch a live tenant's prefix.
