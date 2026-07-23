@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
+import { GoogleMark } from "@/components/google-mark";
 
 function LoginForm() {
   const router = useRouter();
@@ -18,6 +19,10 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
 
   const idleNotice = params.get("reason") === "idle";
+  // OAuth failures bounce back here (errorCallbackURL) instead of the raw
+  // better-auth error page — the usual cause is a Google account that has no
+  // SlipYard account yet.
+  const oauthNotice = params.get("error") !== null;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,7 +42,11 @@ function LoginForm() {
   }
 
   async function googleSignIn() {
-    await authClient.signIn.social({ provider: "google", callbackURL: "/app" });
+    await authClient.signIn.social({
+      provider: "google",
+      callbackURL: "/app",
+      errorCallbackURL: "/login?error=oauth",
+    });
   }
 
   return (
@@ -50,6 +59,13 @@ function LoginForm() {
         {idleNotice && (
           <p className="text-sm rounded-md bg-amber-50 text-amber-800 ring-1 ring-amber-200 px-3 py-2">
             You were signed out after 30 minutes of inactivity.
+          </p>
+        )}
+        {oauthNotice && (
+          <p className="text-sm rounded-md bg-amber-50 text-amber-800 ring-1 ring-amber-200 px-3 py-2">
+            We couldn&apos;t finish signing you in with Google. If you don&apos;t have an account
+            yet, ask your firm owner for an invitation — or create a new firm below. If you do,
+            try again in a moment.
           </p>
         )}
         <form onSubmit={onSubmit} className="space-y-3">
@@ -81,7 +97,7 @@ function LoginForm() {
           </Button>
         </form>
         <Button variant="outline" className="w-full" onClick={googleSignIn}>
-          Continue with Google
+          <GoogleMark /> Continue with Google
         </Button>
         <p className="text-sm text-slate-500 text-center">
           New firm?{" "}
@@ -96,7 +112,9 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <main className="min-h-screen grid place-items-center p-6">
+    <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6">
+      {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
+      <img src="/brand/slipyard-mark.png" alt="SlipYard" className="h-16 w-auto" />
       <Suspense>
         <LoginForm />
       </Suspense>

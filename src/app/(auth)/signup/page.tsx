@@ -36,7 +36,9 @@ export default function SignupPage() {
   }
 
   return (
-    <main className="min-h-screen grid place-items-center p-6">
+    <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6">
+      {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
+      <img src="/brand/slipyard-mark.png" alt="SlipYard" className="h-16 w-auto" />
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-lg">Create your account</CardTitle>

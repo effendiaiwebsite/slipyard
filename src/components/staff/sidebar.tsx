@@ -90,12 +90,11 @@ export function Sidebar({
   return (
     <aside className="w-64 shrink-0 h-screen sticky top-0 border-r border-[var(--color-border)] bg-white flex flex-col print:hidden">
       <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm">
-          {orgName[0]?.toUpperCase() ?? "?"}
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
+        <img src="/brand/slipyard-mark.png" alt="" className="w-9 h-9 object-contain shrink-0" />
         <div className="min-w-0">
           <div className="font-semibold text-sm tracking-tight truncate">{orgName}</div>
-          <div className="text-xs text-slate-500">Practice CRM</div>
+          <div className="text-xs text-slate-500">SlipYard CRM</div>
         </div>
       </div>
       <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 space-y-5">

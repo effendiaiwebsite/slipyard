@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Accountant CRM", template: "%s · Accountant CRM" },
-  description: "Practice CRM for Canadian accounting firms",
+  title: { default: "SlipYard", template: "%s · SlipYard" },
+  description: "SlipYard — the practice CRM for Canadian accounting firms",
 };
 
 export default function RootLayout({

@@ -1,6 +1,10 @@
 @AGENTS.md
 
-# Accountant CRM — multi-tenant practice CRM for Canadian accounting firms
+# SlipYard — multi-tenant practice CRM for Canadian accounting firms
+
+Product name: **SlipYard** (renamed from "Accountant CRM" post-M10; logo in
+`public/brand/` — full lockup `slipyard.png`, mark `slipyard-mark.png`,
+favicon `src/app/icon.png`).
 
 Licensable SaaS: firms subscribe monthly (Stripe, per-seat), add employees with
 role-based permissions, and manage clients, documents, e-signatures, CRA

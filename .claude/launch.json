@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev-outbox",
+      "runtimeExecutable": "C:\\Program Files\\Git\\bin\\bash.exe",
+      "runtimeArgs": [
+        "-lc",
+        "ANTHROPIC_API_KEY= EMAIL_MODE=outbox TWILIO_ACCOUNT_SID= TWILIO_AUTH_TOKEN= TWILIO_FROM_NUMBER= pnpm dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "dev-real-ai",
+      "runtimeExecutable": "C:\\Program Files\\Git\\bin\\bash.exe",
+      "runtimeArgs": [
+        "-lc",
+        "EMAIL_MODE=outbox TWILIO_ACCOUNT_SID= TWILIO_AUTH_TOKEN= TWILIO_FROM_NUMBER= pnpm dev"
+      ],
+      "port": 3000
+    }
+  ]
+}

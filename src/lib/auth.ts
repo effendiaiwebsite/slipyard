@@ -18,7 +18,7 @@ import { env, features } from "@/lib/env";
 export const auth = betterAuth({
   baseURL: env.APP_URL,
   secret: env.AUTH_SECRET,
-  appName: "Accountant CRM",
+  appName: "SlipYard",
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: {
@@ -66,7 +66,7 @@ export const auth = betterAuth({
   },
   plugins: [
     twoFactor({
-      issuer: "Accountant CRM",
+      issuer: "SlipYard",
       skipVerificationOnEnable: false,
     }),
   ],

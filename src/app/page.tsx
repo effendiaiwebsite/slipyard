@@ -54,10 +54,9 @@ export default function LandingPage() {
       <header className="border-b border-[var(--color-border)] bg-white">
         <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-xs">
-              A
-            </div>
-            <span className="font-semibold text-sm tracking-tight">Accountant CRM</span>
+            {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
+            <img src="/brand/slipyard-mark.png" alt="" className="w-8 h-8 object-contain" />
+            <span className="font-semibold text-sm tracking-tight">SlipYard</span>
           </div>
           <nav className="flex items-center gap-3">
             <Button variant="ghost" asChild>
@@ -70,8 +69,14 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <section className="px-6 pt-20 pb-14">
+      <section className="px-6 pt-16 pb-14">
         <div className="max-w-2xl mx-auto text-center space-y-5">
+          {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
+          <img
+            src="/brand/slipyard.png"
+            alt="SlipYard CRM — your slips stored securely, built for Canada"
+            className="mx-auto h-44 w-auto"
+          />
           <h1 className="text-4xl font-semibold tracking-tight text-slate-900">
             The practice CRM built for Canadian accounting firms
           </h1>
@@ -127,7 +132,7 @@ export default function LandingPage() {
 
       <footer className="mt-auto border-t border-[var(--color-border)] bg-white">
         <div className="max-w-5xl mx-auto px-6 py-6 text-xs text-slate-400 flex items-center justify-between flex-wrap gap-2">
-          <span>Accountant CRM — a practice CRM for Canadian firms.</span>
+          <span>SlipYard — the practice CRM for Canadian firms.</span>
           <span>Data resident in Canada · SIN encrypted · Not tax software</span>
         </div>
       </footer>

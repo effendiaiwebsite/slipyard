@@ -1,4 +1,4 @@
-# Accountant CRM
+# SlipYard
 
 Multi-tenant practice CRM for Canadian accounting firms: clients, documents,
 e-signatures, CRA authorizations, messaging, and AI-assisted workflows —

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
+import { GoogleMark } from "@/components/google-mark";
 import { acceptInviteAction } from "./actions";
 
 export function JoinFlow({
@@ -118,10 +119,14 @@ export function JoinFlow({
           variant="outline"
           className="w-full"
           onClick={() =>
-            authClient.signIn.social({ provider: "google", callbackURL: `/join/${token}` })
+            authClient.signIn.social({
+              provider: "google",
+              callbackURL: `/join/${token}`,
+              errorCallbackURL: `/join/${token}`,
+            })
           }
         >
-          Continue with Google
+          <GoogleMark /> Continue with Google
         </Button>
       )}
       <p className="text-xs text-slate-500">
