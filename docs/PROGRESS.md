@@ -524,8 +524,16 @@ _Last updated: 2026-07-23 (M8 AI suite complete — 172 Vitest / 28 Playwright g
    DATA_MODEL "Planned"), warnings surfaced, rollback restores clean state.
 3. Bulk document importer.
 
-M8 leftovers worth knowing: the real-model path (ANTHROPIC_API_KEY set) is
-built but unverified against the live API — first run with a key should
-sanity-check tool_use round-trips + the Subject:-format contract on the
-email drafter (mock and prompts agree on it; ADR-0031). The AI usage log
-has no staff-facing viewer yet (audit page candidate, M10 polish).
+M8 leftovers worth knowing:
+- **Real-model path VERIFIED (2026-07-23).** A real ANTHROPIC_API_KEY was
+  added to .env; live claude-opus-4-8 auth/credits/model confirmed and the
+  AI pages surfed in the dev UI (real prose answers, role scoping visible
+  Joey vs Sam). **NEW live-creds hazard:** .env now also holds a real
+  ANTHROPIC_API_KEY. The outbox prefix does NOT blank it, so `pnpm test` /
+  `test:e2e` with it set will hit the REAL API — and the M8 tests assert on
+  the DETERMINISTIC MOCK output (exact strings like "2025 T1"), so live prose
+  makes them mis-assert AND costs tokens. Blank it for tests too:
+  `ANTHROPIC_API_KEY= EMAIL_MODE=outbox TWILIO_ACCOUNT_SID= TWILIO_AUTH_TOKEN= TWILIO_FROM_NUMBER= pnpm test`
+  (mock mode is what the suite is written for). Saved as a memory.
+- The AI usage log (ai_interaction) has no staff-facing viewer yet (audit
+  page candidate, M10 polish).
