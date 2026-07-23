@@ -109,6 +109,10 @@ test("checklist view + upload lands in the vault as portal_upload and checks the
   page,
   browser,
 }) => {
+  // Real S3 upload + ClamAV scan + verdict poll — same explicit budget the
+  // other pipeline-heavy tests use (the default 30 s got marginal as the dev
+  // server gained routes to compile; first observed in the M8 full run).
+  test.setTimeout(120_000);
   // Fresh link for Ruth (the previous test's session cookie died with its context).
   await loginEnrollingMfa(page, "joey@lakesidecpa.test");
   await page.goto(`/app/clients/${RUTH_ID}`);

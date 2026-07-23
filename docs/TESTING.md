@@ -277,6 +277,32 @@ Tenancy isolation · permissions · tokens · presign (M3) · Stripe webhooks
   13% HST) → the PDF endpoint serves application/pdf with %PDF bytes over
   the staff session → mark sent → entry reads Invoiced.
 
+## Automated coverage (M8)
+- `tests/ai.test.ts` — scrubFreeText masks every SIN grouping and leaves
+  phones/amounts alone; parseEmailDraft; ai.use matrix row (all roles allow,
+  NOT grace-allowed); rule engines pure (filed-missing-docs high severity,
+  no-authorization + missing-sin + stale-stage with severity ordering,
+  clean data → zero findings; aged-wip counts only >30-day entries,
+  aged-invoice, reminders-off, unreachable-client, no-current-return);
+  tool scoping (assigned_only accountant sees only their book in
+  list_clients/missing_documents, out-of-scope client lookup matches the
+  not-found shape — no existence leak); redaction (no tool payload carries
+  the SIN, sin columns, DOB, or raw email; note free text scrubbed but
+  usable); **ZERO WRITE PATHS** (every tool + all four mock features run
+  back-to-back change no row count in any tenant table except
+  ai_interaction); mock service logs feature/prompt/response/tools/model;
+  assistant snapshot numbers differ by role; email drafts ground in real
+  checklist items and create no message/outbox rows; ai_enabled=false
+  throws before any tool/log; ai_interaction RLS isolation.
+- `e2e/m8.spec.ts` — two ACCEPTANCE tests (mock engine — same tool layer
+  as the real model, ADR-0031): (1) assistant answers respect role scoping —
+  clerk (all clients) and sam (assigned-only) ask the same question and get
+  different scoped counts, both runs logged in ai_interaction; (2) drafting
+  an email for Ruth changes NO message/outbox rows; the draft is grounded
+  in her real missing items, the human edits the subject, and only the
+  explicit "Send via Messaging" click creates exactly one manual message +
+  outbox row with the edited subject.
+
 ## Manual checklist — M5 (pending Twilio/SES credentials)
 With real keys in .env (TWILIO_* trio; EMAIL_MODE=ses + verified
 SES_FROM_ADDRESS):

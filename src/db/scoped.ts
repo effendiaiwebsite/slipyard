@@ -1866,6 +1866,64 @@ export class OrgScope {
       return invoice;
     });
   }
+
+  /** Org-wide quarantine view (M8 audit-risk rules): infected / scan_failed. */
+  async listProblemDocuments(opts?: { assignedToId?: string }) {
+    return this.tx((tx) => {
+      const conds = [
+        eq(schema.document.orgId, this.orgId),
+        inArray(schema.document.status, ["infected", "scan_failed"]),
+      ];
+      if (opts?.assignedToId) conds.push(eq(schema.client.assignedAccountantId, opts.assignedToId));
+      return tx
+        .select({
+          id: schema.document.id,
+          clientId: schema.document.clientId,
+          clientName: schema.client.displayName,
+          filename: schema.document.filename,
+          status: schema.document.status,
+          createdAt: schema.document.createdAt,
+        })
+        .from(schema.document)
+        .innerJoin(schema.client, eq(schema.document.clientId, schema.client.id))
+        .where(and(...conds))
+        .orderBy(desc(schema.document.createdAt));
+    });
+  }
+
+  // ---- AI interaction log (M8) --------------------------------------------
+
+  async createAiInteraction(fields: {
+    userId: string;
+    feature: schema.AiFeatureName;
+    prompt: string;
+    response: string;
+    toolsUsed: schema.AiToolUse[];
+    model: string;
+    inputTokens?: number | null;
+    outputTokens?: number | null;
+  }) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .insert(schema.aiInteraction)
+        .values({ orgId: this.orgId, ...fields })
+        .returning();
+      return rows[0];
+    });
+  }
+
+  async listAiInteractions(opts?: { userId?: string; limit?: number }) {
+    return this.tx((tx) => {
+      const conds = [eq(schema.aiInteraction.orgId, this.orgId)];
+      if (opts?.userId) conds.push(eq(schema.aiInteraction.userId, opts.userId));
+      return tx
+        .select()
+        .from(schema.aiInteraction)
+        .where(and(...conds))
+        .orderBy(desc(schema.aiInteraction.createdAt))
+        .limit(opts?.limit ?? 50);
+    });
+  }
 }
 
 /**

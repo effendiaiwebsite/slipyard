@@ -339,3 +339,54 @@ demand from the row via an audited staff-session route and is never stored —
 the row is authoritative and the bytes are reproducible, so retaining
 another S3 object would only create a second source of truth. Invoiced time
 entries are immutable (delete refuses them); paid invoices are terminal.
+
+## ADR-0031 (2026-07-22) — M8 AI suite: @anthropic-ai/sdk, read-only tool layer, mock without key
+New dependency (stack list named "Anthropic API behind AiService" but no
+client): **@anthropic-ai/sdk** — the official SDK; model `claude-opus-4-8`
+(adaptive thinking, no sampling params). Architecture:
+- **One service, two engines** (src/lib/ai/service.ts): with
+  ANTHROPIC_API_KEY the SDK's beta tool runner drives the loop; without it
+  (dev/test default) a deterministic MOCK engine runs the SAME tool layer
+  with a scripted tool sequence per feature and renders the results as text.
+  Scoping/redaction therefore live in the tools, not the engine — every test
+  of the mock path exercises the exact data path the real model uses.
+- **Read-only tool registry** (src/lib/ai/tools.ts): each tool declares the
+  view Action it requires (checked via can()) and receives ONLY an OrgScope +
+  the caller's role context; list-shaped tools apply viewAssignedOnlyFilter.
+  Tools build their payloads field-by-field (never spread a row), so
+  sin_encrypted/sin_last3/date_of_birth can never reach a prompt — the iron
+  rule "no SIN/full DOB to model APIs" is enforced structurally and by test.
+  The registry exposes no create/update/delete of any kind: AI cannot write
+  records because no write exists to call (zero-write proven by test).
+- **Every run is logged** to `ai_interaction` (feature, prompt, response,
+  tools used + row counts, model, token usage; RLS FORCEd) and audited as
+  `ai.use`. New permission action `ai.use`: allow for all four roles (the
+  assistant answers only what the caller's own view permissions expose), NOT
+  grace-mode-allowed (lapsed orgs keep their data, not the AI convenience).
+  Per-org kill switch = existing org.settings.ai_enabled; the service throws
+  before any model/tool call when it's off.
+- **Drafts only**: the service returns text. Nothing it returns is sent,
+  saved to client records, or classified anywhere. The ONE bridge into the
+  world — "Send via Messaging" on the email-drafts page — is a separate
+  staff-triggered server action authorized as messages.send_custom
+  (accountant assigned, clerk DENY) that routes the (possibly edited) draft
+  through the M5 client-messaging layer as a kind='manual' message with
+  consent + channel resolution. The AI path and the send path share no code.
+
+## ADR-0032 (2026-07-22) — Audit risk & optimization: deterministic rules, AI narrates only
+Audit-risk and optimization findings are produced by PURE deterministic
+rules (src/lib/ai/insights.ts) over practice data the CRM actually holds —
+this product sits beside the EFILE software and has no return amounts, so
+"audit risk" here means PRACTICE risk: filed/complete returns with missing
+or waived required checklist items, filings without an active CRA
+authorization (expiry-aware, ADR-0028), unresolved infected/scan_failed
+documents, stale in-progress engagements, individuals missing SIN on file.
+Optimization advises on operations: aged unbilled WIP, sent-unpaid
+invoices, clients with no current-season engagement, reminder policy off
+while awaiting_docs piles up, unreachable clients (no email + no consented
+SMS). The AI's only job on these pages is to NARRATE the rule output
+(sorted, capped, with rule ids) — it never decides what is risky, so
+identical data yields identical findings with or without a model key, and
+the rules are unit-tested as plain functions. Findings render with their
+rule id beside the narrative; nothing is stored on the client record
+(same stateless posture as AFR, ADR-0029).

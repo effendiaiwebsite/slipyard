@@ -311,6 +311,26 @@ All money integer CENTS (CAD) — ADR-0030.
 
 The PDF is generated on demand (src/lib/invoice-pdf.ts) — never stored.
 
+## AI interaction log (M8, RLS FORCEd — drizzle/0024_m8_rls.sql)
+
+### ai_interaction
+One row per AiService run (ADR-0031) — the accountability surface for "AI
+drafts only": every AI output traces back here, and since the tool registry
+has no writes, this log is the complete story of what AI touched.
+| field | type | notes |
+|---|---|---|
+| user_id | text FK staff_user | who asked |
+| feature | enum ai_feature | assistant / email_draft / meeting_prep / audit_risk / optimize |
+| prompt | text | the staff member's input (free text — as sensitive as client_note) |
+| response | text | full returned draft/answer/narrative |
+| tools_used | jsonb AiToolUse[] | tool names + result row counts ONLY — never payloads |
+| model | text | `claude-opus-4-8`, or `mock` when no API key (dev default) |
+| input_tokens, output_tokens | int null | null in mock mode |
+
+SIN/DOB can never appear: the tool layer builds payloads field-by-field
+(sin/dob columns unselected) and scrubs SIN-shaped digit runs from staff
+free text before it reaches a prompt.
+
 ## Enums
 subscription_status: trialing, active, past_due, canceled
 staff_role: owner, admin, accountant, clerk
@@ -335,8 +355,9 @@ signature_method: drawn, typed
 authorization_level: level1, level2, level3
 authorization_status: pending, active, expired, revoked
 invoice_status: draft, sent, paid, void
+ai_feature: assistant, email_draft, meeting_prep, audit_risk, optimize
 
 ## Planned (added at their milestone; spec §3)
-ai_interaction (M8), import_batch, import_mapping_template, staging tables
-(M9). (trusted_helper is folded into portal_token — is_helper/
-include_household.)
+import_batch, import_mapping_template, staging tables (M9).
+(trusted_helper is folded into portal_token — is_helper/include_household;
+ai_interaction landed at M8.)

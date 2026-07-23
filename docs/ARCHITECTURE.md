@@ -134,6 +134,20 @@ the source is never touched. "Out for signature" surfaces on /app/esign
 (by request status) and the dashboard card. Multiple signers = one request per
 client.
 
+**AI suite (M8, ADR-0031/32)** — AiService (src/lib/ai/service.ts) fronts
+claude-opus-4-8 behind ANTHROPIC_API_KEY; without a key a deterministic mock
+engine drives the SAME read-only tool registry (src/lib/ai/tools.ts), so the
+data path is identical in dev/test. Tools are the only surface the model can
+reach: view-permission-checked, assigned-only-scoped
+(viewAssignedOnlyFilter), payloads built field-by-field (SIN/DOB columns
+unselected; SIN-shaped digit runs scrubbed from staff free text). The
+registry contains NO writes — AI drafts only. Every run logs to
+ai_interaction (RLS) and audits as ai.use. Audit-risk/optimize pages run
+pure rule engines (src/lib/ai/insights.ts); the model only narrates their
+output. The email drafter's send button is an ordinary M5 manual send
+(messages.send_custom) the human triggers after editing — the AI has no
+path to it. Per-org kill switch: org.settings.ai_enabled.
+
 **Stripe webhooks (M1)** — signature-verified, idempotent handlers for
 checkout.session.completed, customer.subscription.updated/deleted.
 

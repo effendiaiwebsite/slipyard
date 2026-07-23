@@ -1,6 +1,6 @@
 # Progress
 
-_Last updated: 2026-07-23 (M7 CRA authorizations / AFR / time & billing / reporting complete — 150 Vitest / 26 Playwright green)_
+_Last updated: 2026-07-23 (M8 AI suite complete — 172 Vitest / 28 Playwright green)_
 
 ## DONE
 - **M0 — Foundation** (commit `M0: ...`): scaffold, RLS + OrgScope, better-auth
@@ -293,8 +293,63 @@ _Last updated: 2026-07-23 (M7 CRA authorizations / AFR / time & billing / report
     client page now carries a hidden <option>Revoked</option> in the
     authorization status select). Production build verified.
 
+- **M8 — AI suite** (this commit):
+  - New dependency **@anthropic-ai/sdk** (ADR-0031); model `claude-opus-4-8`
+    (adaptive thinking). No key in dev/test → the MOCK engine runs the SAME
+    read-only tool layer with deterministic scripts, so every scoping/
+    redaction test exercises the real data path. `features.realAi` gates.
+  - Schema + FORCEd RLS (0023/0024): ai_interaction — one row per AiService
+    run (feature enum, prompt, response, tools_used names+counts jsonb,
+    model, token counts). OrgScope: createAiInteraction, listAiInteractions,
+    listProblemDocuments (quarantine view for the risk rules).
+  - Read-only tool registry (src/lib/ai/tools.ts): list_clients,
+    get_client_overview, pipeline_summary, missing_documents,
+    authorization_coverage, billing_summary. Each declares the view Action
+    it needs (checked via can(); self-assigned resource ref so accountants'
+    'assigned' rules pass and the tools themselves narrow via
+    viewAssignedOnlyFilter). Payloads built field-by-field — sin_encrypted/
+    sin_last3/date_of_birth/addresses/raw emails/custom_fields can never
+    reach a prompt; staff free text (notes, contact summaries) passes
+    scrubFreeText (masks SIN-shaped digit runs). NO write exists in the
+    registry — zero write paths proven by table-count snapshot test.
+  - AiService (src/lib/ai/service.ts): bounded manual tool-use loop (max 8
+    iterations, usage summed) against the Messages API; per-feature entry
+    points askAssistant (chat w/ history), draftClientEmail (Subject:/body
+    format, parsed), prepareMeetingBrief, narrateFindings. Every run logged
+    to ai_interaction + audited as ai.use by the actions. ai_enabled=false
+    throws AiDisabledError before any tool/model/log call.
+  - Audit risk + optimization (ADR-0032): PURE rule engines in
+    src/lib/ai/insights.ts — practice risk (filed-missing-docs,
+    filed-waived-docs, no-authorization, authorization-expiring,
+    missing-sin, stale-stage >45d, quarantined-document) and operations
+    (aged-wip >30d, aged-invoice >30d, no-current-return, reminders-off,
+    unreachable-client). AI only NARRATES the findings; the table renders
+    the rule output verbatim with rule ids. Stateless (AFR posture).
+  - Permissions: new `ai.use` (all four roles allow — answers can only
+    contain what the caller's own view scope exposes; NOT grace-allowed).
+  - UI: all five /app/ai placeholder pages replaced — assistant (chat with
+    suggestion chips), email drafts (pick client → instructions → draft →
+    EDIT → explicit "Send via Messaging" via messages.send_custom through
+    the M5 layer, or copy; clerk send denied by matrix), meeting prep
+    (per-client brief), audit risk + optimization advisor (findings table +
+    on-demand AI summary). Every page shows a disabled card when the org's
+    ai_enabled toggle (Settings) is off.
+  - Tests: 172 Vitest (22 new in ai.test.ts — scrubbing, matrix row, rule
+    engines, tool scoping incl. no-existence-leak, redaction sweep across
+    every tool, ZERO-write snapshot, mock-engine logging, role-scoped
+    snapshot numbers, drafts-don't-send, ai_enabled gate, RLS) + 28
+    Playwright (2 new ACCEPTANCE in m8.spec.ts: clerk vs assigned-only
+    accountant get different scoped assistant answers; email draft creates
+    no message/outbox rows until the explicit send, which lands exactly one
+    manual message with the human-edited subject). m4's portal-upload test
+    now sets test.setTimeout(120_000) like the other pipeline-heavy tests —
+    its default 30 s went marginal as the dev server gained routes; m8's
+    draft assertion anchors on "Daycare receipts" (the one Ruth item no
+    earlier spec satisfies). Production build verified.
+
 ## IN PROGRESS
-- Nothing — stopped at the M7 boundary. Next milestone is M8 (AI suite).
+- Nothing — stopped at the M8 boundary. Next milestone is M9 (hardening +
+  generic data import).
 - **Flagging Satinder (M6 real-device checks, optional):** the whole flow is
   proven in e2e (in-person draft→sent→signed, immutable executed PDF). The
   remaining human check is REMOTE signing on a real phone through a tunnel:
@@ -457,18 +512,20 @@ _Last updated: 2026-07-23 (M7 CRA authorizations / AFR / time & billing / report
 - AWS budget alarm skipped for now (new account on free credits with
   automatic credit-exhaustion notifications).
 
-## NEXT 3 CONCRETE STEPS (M8 — AI suite)
-1. AiService behind the Anthropic API key (mock without key, per the stack
-   list), permission-scoped READ tools only, per-org AI toggle
-   (org.settings.ai_enabled already exists), ai_interaction logging table.
-   Iron rule: AI drafts only — never writes records, never auto-sends,
-   never auto-classifies; no SIN/full DOB to model APIs.
-2. Knowledge assistant + email drafts→Messaging drafts + meeting prep
-   surfaces (the /app/ai/* placeholder pages). Acceptance: assistant
-   answers respect role scoping (clerk test); zero write paths from AI
-   proven by test; drafts never auto-send.
-3. Audit risk (rules+narrative) + optimization advisor.
+## NEXT 3 CONCRETE STEPS (M9 — hardening + generic data import)
+1. Security hardening pass per the spec's §6 checklist with evidence
+   recorded in TESTING.md: dependency audit (pnpm audit + review),
+   tenancy-isolation red-team tests (deliberate cross-org probes through
+   every surface incl. the AI tools), backup script, retention/review job
+   (vault + executed PDFs have no delete path by design — M9 builds the
+   7-year retention flow), S3 lifecycle/cleanup for deleted orgs.
+2. Generic import wizard: messy-CSV column mapping onto client/custom
+   fields (import_batch, import_mapping_template, staging tables per
+   DATA_MODEL "Planned"), warnings surfaced, rollback restores clean state.
+3. Bulk document importer.
 
-Handy M7 leftovers for M8: the reports page shows the aggregates the
-assistant will want to read; viewAssignedOnlyFilter is the scoping pattern
-for AI read tools.
+M8 leftovers worth knowing: the real-model path (ANTHROPIC_API_KEY set) is
+built but unverified against the live API — first run with a key should
+sanity-check tool_use round-trips + the Subject:-format contract on the
+email drafter (mock and prompts agree on it; ADR-0031). The AI usage log
+has no staff-facing viewer yet (audit page candidate, M10 polish).

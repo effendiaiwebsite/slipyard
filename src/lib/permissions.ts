@@ -59,6 +59,10 @@ export const ACTIONS = [
   "messages.send_templated",
   "messages.manage_templates",
   "messages.send_custom",
+  // AI suite (M8): run the drafts-only AiService. Every role may ask — the
+  // read tools behind it re-check the caller's own view permissions, so an
+  // answer can never contain more than the asker could see in the UI.
+  "ai.use",
   // audit
   "audit.view",
 ] as const;
@@ -99,6 +103,7 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "messages.send_templated": "allow",
     "messages.manage_templates": "allow",
     "messages.send_custom": "allow",
+    "ai.use": "allow",
     "audit.view": "allow",
   },
   admin: {
@@ -130,6 +135,7 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "messages.send_templated": "allow",
     "messages.manage_templates": "allow",
     "messages.send_custom": "allow",
+    "ai.use": "allow",
     "audit.view": "allow",
   },
   accountant: {
@@ -161,6 +167,7 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "messages.send_templated": "allow",
     "messages.manage_templates": "deny",
     "messages.send_custom": "assigned",
+    "ai.use": "allow",
     "audit.view": "deny",
   },
   clerk: {
@@ -192,6 +199,7 @@ const MATRIX: Record<Role, Record<Action, Rule>> = {
     "messages.send_templated": "allow",
     "messages.manage_templates": "deny",
     "messages.send_custom": "deny",
+    "ai.use": "allow",
     "audit.view": "deny",
   },
 };

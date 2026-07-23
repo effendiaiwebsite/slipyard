@@ -45,11 +45,18 @@
   session. Coverage/expiry derivation ADR-0028, CSV parsing/matching
   ADR-0029, integer-cents billing + snapshot invoicing ADR-0030. Reports
   page at /app/reports.)_
-- [ ] **M8 — AI suite.** AiService + permission-scoped read tools, knowledge
+- [x] **M8 — AI suite.** AiService + permission-scoped read tools, knowledge
   assistant, email drafts→Messaging drafts, meeting prep, audit risk
   (rules+narrative), optimization advisor, org AI toggle, ai_interaction
   logging. ✅ Assistant answers respect role scoping (clerk test); zero write
-  paths from AI proven by test; drafts never auto-send.
+  paths from AI proven by test; drafts never auto-send. _(@anthropic-ai/sdk
+  behind AiService, mock without key runs the same read-only tool layer
+  (ADR-0031); audit-risk/optimize are deterministic rules the AI only
+  narrates (ADR-0032). Scoping proven in e2e/m8.spec.ts (clerk vs
+  assigned-only accountant get different scoped counts) and
+  tests/ai.test.ts; zero-write proven by table-count snapshot across every
+  tool + feature; draft-then-explicit-send proven in e2e (no message/outbox
+  rows until the human clicks Send).)_
 - [ ] **M9 — Hardening + generic data import.** §6 checklist with evidence in
   TESTING.md, dependency audit, backup script, retention job,
   tenancy-isolation red-team tests; full import wizard + bulk document
