@@ -2,7 +2,7 @@
 
 import { PenLine, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { FieldPlacement } from "@/db/schema";
@@ -16,13 +16,56 @@ import {
 
 /**
  * Draft signature editor (M6): configure signer + mode, place fields on
- * aspect-true page boxes (ADR-0025 — no in-browser PDF renderer), then send
- * remotely or sign in person. Every step persists the draft first, so what's
- * saved matches what's sent/signed.
+ * aspect-true page boxes (ADR-0025), then send remotely or sign in person.
+ * Every step persists the draft first, so what's saved matches what's
+ * sent/signed.
+ *
+ * M10 (ADR-0037): pdf.js renders the real page into each box's background,
+ * so placement is pixel-accurate. The geometry model is unchanged — fields
+ * stay fractional coords on aspect-true boxes; the render is cosmetic, and
+ * when it fails (fetch error, pdf.js won't load) the editor degrades to the
+ * blank boxes that shipped in M6.
  */
 
 type PageSize = { width: number; height: number };
 type FieldKind = "signature" | "initials" | "date";
+
+/** The slice of pdf.js the overlay uses (loaded dynamically, client-only). */
+type PdfPage = {
+  getViewport: (o: { scale: number }) => { width: number; height: number };
+  render: (o: { canvas: HTMLCanvasElement; viewport: unknown }) => { promise: Promise<void> };
+};
+type PdfDoc = { numPages: number; getPage: (n: number) => Promise<PdfPage> };
+
+/** Longest rendered edge in device pixels — crisp on 2x screens, cheap. */
+const PDF_RENDER_EDGE = 1600;
+
+/** Fetch the source PDF (same-origin) and open it with pdf.js. */
+function usePdfDoc(requestId: string): PdfDoc | null {
+  const [doc, setDoc] = useState<PdfDoc | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [pdfjs, res] = await Promise.all([
+          import("pdfjs-dist"),
+          fetch(`/api/esign/${requestId}/source`),
+        ]);
+        if (!res.ok) return;
+        pdfjs.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.mjs";
+        const data = await res.arrayBuffer();
+        const loaded = (await pdfjs.getDocument({ data }).promise) as unknown as PdfDoc;
+        if (!cancelled) setDoc(loaded);
+      } catch {
+        /* blank boxes remain — same editor as M6 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [requestId]);
+  return doc;
+}
 
 const KIND_LABEL: Record<FieldKind, string> = {
   signature: "Signature",
@@ -66,6 +109,7 @@ export function DraftEditor({
   const [pendingKind, setPendingKind] = useState<FieldKind>("signature");
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
+  const pdf = usePdfDoc(requestId);
 
   function currentPayload() {
     return {
@@ -167,6 +211,7 @@ export function DraftEditor({
                   key={i}
                   index={i}
                   size={p}
+                  pdf={pdf}
                   pendingKind={pendingKind}
                   placements={placements}
                   setPlacements={setPlacements}
@@ -272,19 +317,47 @@ export function DraftEditor({
 function PageBox({
   index,
   size,
+  pdf,
   pendingKind,
   placements,
   setPlacements,
 }: {
   index: number;
   size: PageSize;
+  pdf: PdfDoc | null;
   pendingKind: FieldKind;
   placements: FieldPlacement[];
   setPlacements: React.Dispatch<React.SetStateAction<FieldPlacement[]>>;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragId = useRef<string | null>(null);
   const pageFields = placements.filter((p) => p.page === index);
+
+  // Paint the real page behind the fields once pdf.js has the document
+  // (ADR-0037). Purely cosmetic — every interaction stays on the box.
+  useEffect(() => {
+    if (!pdf || index >= pdf.numPages) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await pdf.getPage(index + 1);
+        const base = page.getViewport({ scale: 1 });
+        const scale = PDF_RENDER_EDGE / Math.max(base.width, base.height);
+        const viewport = page.getViewport({ scale });
+        const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
+        canvas.width = Math.round(viewport.width);
+        canvas.height = Math.round(viewport.height);
+        await page.render({ canvas, viewport }).promise;
+      } catch {
+        /* leave the box blank */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pdf, index]);
 
   function addAt(e: React.MouseEvent<HTMLDivElement>) {
     if (dragId.current) return; // finishing a drag, not a place-click
@@ -338,6 +411,11 @@ function PageBox({
         className="relative w-full bg-white ring-1 ring-slate-300 rounded-sm cursor-crosshair select-none"
         style={{ aspectRatio: `${size.width} / ${size.height}` }}
       >
+        <canvas
+          ref={canvasRef}
+          aria-hidden
+          className="absolute inset-0 h-full w-full pointer-events-none rounded-sm"
+        />
         {pageFields.map((f) => (
           <div
             key={f.id}

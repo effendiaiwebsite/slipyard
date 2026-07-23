@@ -70,6 +70,14 @@
   encrypted at staging (never plaintext at rest), custom fields from unmapped
   columns, dependency-guarded rollback — ACCEPTANCE proven in e2e/m9.spec.ts.
   Bulk document importer reuses the intake pipeline (ADR-0035).)_
-- [ ] **M10 — Polish + deploy.** Empty/error/loading states, print styles,
+- [x] **M10 — Polish + deploy.** Empty/error/loading states, print styles,
   marketing/pricing stub, deployment runbook, final E2E sweep, demo
-  walkthrough script. ✅ Walkthrough executes cleanly.
+  walkthrough script. ✅ Walkthrough executes cleanly. _(All customer-noted
+  backlog shipped: front-desk clerk dashboard + wired "Documents outstanding"
+  card (ADR-0036), pdf.js pixel-accurate e-sign placement (ADR-0037),
+  jscanify multi-strategy detection/auto-capture/drag-corners, AI usage
+  viewer, error/loading/404 states + print styles. docs/DEPLOYMENT.md is the
+  production runbook (SES DKIM/SPF/DMARC, KMS, Twilio webhook, backups,
+  Stripe live); docs/WALKTHROUGH.md is the demo script — every step mapped to
+  the e2e spec that automates it, and the full suite is the machine-checked
+  walkthrough run.)_

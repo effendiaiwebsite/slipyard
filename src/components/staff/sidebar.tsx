@@ -88,7 +88,7 @@ export function Sidebar({
     .toUpperCase();
 
   return (
-    <aside className="w-64 shrink-0 h-screen sticky top-0 border-r border-[var(--color-border)] bg-white flex flex-col">
+    <aside className="w-64 shrink-0 h-screen sticky top-0 border-r border-[var(--color-border)] bg-white flex flex-col print:hidden">
       <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm">
           {orgName[0]?.toUpperCase() ?? "?"}

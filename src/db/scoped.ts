@@ -1044,6 +1044,24 @@ export class OrgScope {
     );
   }
 
+  /** Front-desk dashboard: newest portal-sourced uploads with client names. */
+  async listRecentPortalUploads(limit = 8) {
+    return this.tx((tx) =>
+      tx
+        .select({ document: schema.document, clientName: schema.client.displayName })
+        .from(schema.document)
+        .innerJoin(schema.client, eq(schema.document.clientId, schema.client.id))
+        .where(
+          and(
+            eq(schema.document.orgId, this.orgId),
+            eq(schema.document.source, "portal_upload")
+          )
+        )
+        .orderBy(desc(schema.document.createdAt))
+        .limit(limit)
+    );
+  }
+
   // ---- checklists (M3) --------------------------------------------------------
 
   /** Bulk insert at instantiation (template) — positions come from the caller. */
@@ -1195,6 +1213,34 @@ export class OrgScope {
         )
         .orderBy(asc(schema.checklistItem.position))
     );
+  }
+
+  /**
+   * Dashboard "Documents outstanding": missing REQUIRED checklist items,
+   * optionally narrowed to one assignee's engagements (personal variant).
+   * Returns the item count plus how many returns they spread across.
+   */
+  async countMissingRequiredDocuments(assignedToId?: string) {
+    return this.tx(async (tx) => {
+      const conds = [
+        eq(schema.checklistItem.orgId, this.orgId),
+        eq(schema.checklistItem.status, "missing"),
+        eq(schema.checklistItem.required, true),
+      ];
+      if (assignedToId) conds.push(eq(schema.engagement.assignedToId, assignedToId));
+      const rows = await tx
+        .select({
+          items: sql<number>`count(*)::int`,
+          engagements: sql<number>`count(distinct ${schema.checklistItem.engagementId})::int`,
+        })
+        .from(schema.checklistItem)
+        .innerJoin(
+          schema.engagement,
+          eq(schema.checklistItem.engagementId, schema.engagement.id)
+        )
+        .where(and(...conds));
+      return rows[0] ?? { items: 0, engagements: 0 };
+    });
   }
 
   // ---- portal tokens (M4) -----------------------------------------------------
@@ -1924,6 +1970,19 @@ export class OrgScope {
         .orderBy(desc(schema.aiInteraction.createdAt))
         .limit(opts?.limit ?? 50);
     });
+  }
+
+  /** AI usage viewer (M10, ADR-0036): interactions with the user's name. */
+  async listAiInteractionsWithUsers(limit = 100) {
+    return this.tx((tx) =>
+      tx
+        .select({ interaction: schema.aiInteraction, userName: schema.staffUser.name })
+        .from(schema.aiInteraction)
+        .leftJoin(schema.staffUser, eq(schema.aiInteraction.userId, schema.staffUser.id))
+        .where(eq(schema.aiInteraction.orgId, this.orgId))
+        .orderBy(desc(schema.aiInteraction.createdAt))
+        .limit(limit)
+    );
   }
 
   // ---- retention review (M9, ADR-0034) ---------------------------------------

@@ -1,8 +1,10 @@
 import type { NextConfig } from "next";
 
 /**
- * Security headers (§6). CSP is intentionally strict; pdf.js (M6) may need
- * further additions when it lands — extend deliberately, never wholesale.
+ * Security headers (§6). CSP is intentionally strict — extend deliberately,
+ * never wholesale. pdf.js (M10 placement overlay) needed nothing new: the
+ * library is bundled by Next and its worker is served from /public/vendor,
+ * both covered by 'self'.
  *
  * M4 additions for the portal capture flow (jscanify + OpenCV.js served
  * from /public/vendor, same-origin):
@@ -38,6 +40,12 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // NOTE (M10): do NOT set `htmlLimitedBots: /.*/` to force blocking
+  // metadata — treating every UA as an HTML-limited bot broke interactive
+  // flows across the app in e2e (hung navigations after server actions,
+  // stray 404s). The portal's title-in-<head> guarantee is achieved by NOT
+  // having a loading.tsx in the portal segment instead (no early shell
+  // flush → metadata stays blocking there).
   // Dev-only: Next blocks cross-origin requests to dev assets, which breaks
   // testing the portal from a phone through a Cloudflare quick tunnel
   // (real-device SMS/camera runs — see docs/TESTING.md "M4 manual items").

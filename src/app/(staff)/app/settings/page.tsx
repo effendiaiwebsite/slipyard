@@ -64,6 +64,16 @@ export default async function SettingsPage() {
             </Card>
           </Link>
         )}
+        {can(ctx.actor, "audit.view") && (
+          <Link href="/app/settings/ai-usage" className="group">
+            <Card className="transition group-hover:border-slate-300">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">AI usage →</CardTitle>
+                <CardDescription>Every AI run: who asked, tools read, tokens used.</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
         {can(ctx.actor, "documents.view") && (
           <Link href="/app/settings/retention" className="group">
             <Card className="transition group-hover:border-slate-300">

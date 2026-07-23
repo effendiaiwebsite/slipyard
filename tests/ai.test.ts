@@ -471,4 +471,14 @@ describe("AiService (mock engine — same tool layer as the real one)", () => {
     const theirs = await scopeB.listAiInteractions();
     expect(theirs).toEqual([]);
   });
+
+  it("the usage viewer join resolves user names and stays tenant-isolated (M10)", async () => {
+    const rows = await scopeA.listAiInteractionsWithUsers(10);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0].userName).toBe("Test User A");
+    // Newest first, same ordering contract as listAiInteractions.
+    const times = rows.map((r) => r.interaction.createdAt.getTime());
+    expect([...times].sort((a, b) => b - a)).toEqual(times);
+    expect(await scopeB.listAiInteractionsWithUsers(10)).toEqual([]);
+  });
 });

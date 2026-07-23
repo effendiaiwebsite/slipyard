@@ -50,10 +50,10 @@ test("owner invites an employee; invitee joins, enrolls MFA, lands on personal d
   // Mandatory MFA before any staff surface.
   await enrollMfa(invitee, INVITEE_PASSWORD);
 
-  // Clerk → personal dashboard variant.
+  // Clerk → front-desk dashboard variant (M10, ADR-0036).
   await expect(invitee.getByRole("heading", { name: /Welcome back, Taylor/i })).toBeVisible();
-  await expect(invitee.getByText(/Your personal dashboard/i)).toBeVisible();
-  await expect(invitee.getByText("My assigned clients")).toBeVisible();
+  await expect(invitee.getByText(/front desk/i).first()).toBeVisible();
+  await expect(invitee.getByText("Documents in intake")).toBeVisible();
   await inviteeContext.close();
 });
 

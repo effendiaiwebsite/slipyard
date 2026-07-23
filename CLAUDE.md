@@ -71,4 +71,5 @@ isolation testing). First login forces TOTP enrollment.
 ## Docs
 `docs/ARCHITECTURE.md` (tenancy, flows) · `docs/DATA_MODEL.md` (authoritative
 schema) · `docs/MILESTONES.md` (checkboxes, never reorder) · `docs/PROGRESS.md`
-(state + next steps) · `docs/DECISIONS.md` (ADRs) · `docs/TESTING.md`.
+(state + next steps) · `docs/DECISIONS.md` (ADRs) · `docs/TESTING.md` ·
+`docs/DEPLOYMENT.md` (production runbook) · `docs/WALKTHROUGH.md` (demo script).

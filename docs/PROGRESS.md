@@ -1,6 +1,7 @@
 # Progress
 
-_Last updated: 2026-07-23 (M9 hardening + import complete — 206 Vitest / 31 Playwright green)_
+_Last updated: 2026-07-23 (M10 polish + deploy complete — ALL MILESTONES DONE;
+209 Vitest / 36 Playwright green)_
 
 ## DONE
 - **M0 — Foundation** (commit `M0: ...`): scaffold, RLS + OrgScope, better-auth
@@ -403,16 +404,71 @@ _Last updated: 2026-07-23 (M9 hardening + import complete — 206 Vitest / 31 Pl
     rollback restores the exact pre-import state). Production build verified
     (incl. after the dependency-override bumps).
 
+- **M10 — Polish + deploy** (this commit):
+  - **Dashboards (ADR-0036)**: "Documents outstanding" card wired to the real
+    missing-required count (countMissingRequiredDocuments — items + distinct
+    returns, assignee-scoped on the accountant variant, links to Returns;
+    the "Arrives in M3" placeholder is gone). NEW front-desk dashboard for
+    clerks (the personal variant read as zeros — customer-noted): documents
+    in intake w/ not-yet-cleared badge, firm-wide awaiting-docs + documents
+    outstanding, intake-queue and recent-portal-uploads cards
+    (listRecentPortalUploads), quick actions. Firm-wide per ADR-0023; no new
+    data authority.
+  - **AI usage viewer (ADR-0036)**: Settings → AI usage — every ai_interaction
+    run (asker, feature, tools+counts, model, tokens, expandable
+    prompt/response). Gated by the EXISTING audit.view (owner/admin);
+    listAiInteractionsWithUsers join.
+  - **Capture quality (M4 backlog, customer-deferred)**: multi-strategy
+    detection (adaptive-threshold → contours → largest-quad fallback behind
+    jscanify's Canny pass, same quality gate), auto-capture after a ~1.2 s
+    steady quad (default on, one big checkbox off), drag-the-corners
+    adjustment on review (extractPaper custom cornerPoints, whole-surface
+    touch targets). Every failure still lands on the native camera input.
+    NEEDS SATINDER: real-device pass (TESTING.md "Manual checklist — M10").
+  - **E-sign placement is pixel-accurate (ADR-0037)**: pdfjs-dist renders the
+    real page into each placement box's background canvas; geometry model,
+    stamping and tests unchanged (render is cosmetic, degrades to M6's blank
+    boxes). Bytes via new same-origin /api/esign/[id]/source (signatures.view
+    + assignment, audited, clean docs only); worker vendored to
+    /public/vendor on postinstall; zero CSP additions.
+  - **Shell polish**: staff + portal error.tsx (Next 16 unstable_retry),
+    staff loading.tsx skeleton, staff + root not-found.tsx (assigned-only
+    404s now styled, still no existence leak), global-error; print styles
+    (@media print + print:hidden chrome — reports/invoices print clean).
+    Marketing page: features grid + real pricing ($300/firm flat, ADR-0012).
+    **Gotcha fixed en route**: a portal loading.tsx made Next STREAM
+    metadata (title appended to <body> late) → axe document-title AAA
+    failure on every portal screen. The portal therefore has NO loading.tsx
+    (no early flush → blocking <head> titles). Do NOT "fix" this with
+    `htmlLimitedBots: /.*/` — treating every UA as an HTML-limited bot broke
+    interactive flows suite-wide (hung post-action navigations, stray 404s);
+    see the note in next.config.ts.
+  - **Deploy + demo**: docs/DEPLOYMENT.md (provisioning, env table, Stripe
+    live, SES production access + firm-domain DKIM/SPF/DMARC, Twilio webhook,
+    backup + s3-cleanup schedules incl. restore drill, go-live smoke, update
+    procedure) and docs/WALKTHROUGH.md (scripted ~20-min demo on the seed;
+    each step mapped to its covering spec — the green e2e suite IS the
+    machine-checked walkthrough). Both linked from CLAUDE.md.
+  - Tests: 209 Vitest (3 new: dashboard.test.ts count/uploads scoping +
+    isolation; ai.test.ts usage-viewer join) + 36 Playwright (5 new in
+    m10.spec.ts: front-desk dashboard vs DB counts; owner card wired +
+    linked; pdf.js canvas actually painted through the new source route with
+    placement/cancel intact; AI usage owner-sees/clerk-denied; styled 404 +
+    pricing page). auth/m1 clerk-landing assertions updated to the front-desk
+    variant. m10.spec sorts between m1 and m2 — it is seed-only and
+    additive/self-cleaning by design. Production build verified.
+
 ## IN PROGRESS
-- Nothing — stopped at the M9 boundary. Next milestone is M10 (polish +
-  deploy).
-- **Flagging Satinder (M6 real-device checks, optional):** the whole flow is
-  proven in e2e (in-person draft→sent→signed, immutable executed PDF). The
-  remaining human check is REMOTE signing on a real phone through a tunnel:
-  issue a portal link to a real handset, open it, and sign a form — the same
-  tunnel setup as the M4 run. Not required to close M6 (in-person is fully
-  covered); nice-to-have alongside the M7 work. `EMAIL_MODE=ses` + live Twilio
-  are already in `.env` from M5.
+- Nothing — ALL MILESTONES COMPLETE. The product is feature-complete against
+  the spec; remaining work is deployment (docs/DEPLOYMENT.md) and the manual
+  device checks below.
+- **Flagging Satinder (manual, real device):**
+  - M10 capture-quality pass — TESTING.md "Manual checklist — M10" (tunnel +
+    handset, ~15 min): low-contrast detection, auto-capture, corner
+    adjustment, camera-denied fallback; plus a desktop e-sign placement spot
+    check and a print check.
+  - Still-open older item (optional): REMOTE signing on a real phone through
+    a tunnel (M6 note below) — in-person is fully covered by e2e.
 
 ## KNOWN BUGS / LIMITATIONS
 - ~~Scanning is synchronous in the upload request~~ Moved to pg-boss at M5
@@ -480,10 +536,9 @@ _Last updated: 2026-07-23 (M9 hardening + import complete — 206 Vitest / 31 Pl
   carriers mangle long links in practice.
 - ~~Portal "Sign a form" card is a static placeholder until M6.~~ DONE (M6):
   lists pending requests and drives remote signing in the portal session.
-- **E-sign field placement is on aspect-true page boxes, not a pixel-rendered
-  PDF (ADR-0025).** Adequate for the one/two-page CRA forms this firm signs; a
-  pixel-accurate drag-on-the-rendered-page overlay (pdf.js) is M10 polish. The
-  actual PDF opens in a tab for reference alongside the placement boxes.
+- ~~E-sign field placement is on blank aspect-true page boxes~~ DONE (M10,
+  ADR-0037): pdf.js renders the real page behind the boxes — pixel-accurate
+  placement; degrades to the blank boxes if the render fails.
 - **Signature reminders are manual** (staff re-open a sent request; there's no
   automated "you haven't signed yet" sweep like the M5 doc reminders). Add a
   category/age-keyed signing-reminder sweep if Joey asks — the plumbing
@@ -505,31 +560,17 @@ _Last updated: 2026-07-23 (M9 hardening + import complete — 206 Vitest / 31 Pl
   2026-01-31), same convention as the portal-token fixture dates: the seeded
   "expiring soon" badge reads correctly while the dev clock sits in the 2026
   season; unit tests pin `today` explicitly.
-- **Clerk (front-desk) dashboard is the personal/assigned-to-me variant, which
-  reads mostly zero for clerks** (nothing is ever assigned to a clerk).
-  Customer-noted 2026-07-22; logged for M10 polish. Their actual workflow
-  (all-clients list, document intake queue, portal links, messaging) works
-  via the sidebar — only the /app landing page isn't tailored. M10 build: a
-  front-desk dashboard (documents in intake, firm-wide clients awaiting docs,
-  recent portal activity).
-- **Dashboard "Documents outstanding" card is a stale pre-M3 placeholder**
-  (shows "—" + "Arrives in M3" though M3 shipped). Customer-noted
-  2026-07-22. M10 fix: wire it to the real missing-required-docs count
-  (listChecklistSummaries / listMissingChecklistItems already exist), scoped
-  firm-wide vs assigned like the rest of the dashboard, linking to the
-  Returns page. The M6 (signatures) and M7 (authorizations) cards beside it
-  are correctly still upcoming.
-- **Page detection quality is "good enough", deferred to M10 polish**
-  (customer decision 2026-07-22, after the real-device run). jscanify's
-  single Canny+Otsu pass misses low-contrast scenes — white paper on a pale
-  counter, or a page with no margin in frame. Mitigated for now by the live
-  outline + guidance copy, a quality gate that refuses implausible quads,
-  and an honest fallback to the unmodified photo (always acceptable to
-  send). Candidate improvements when we polish: drag-to-adjust corners
-  (extractPaper already accepts custom cornerPoints), auto-capture once a
-  stable quad holds for N frames, a multi-strategy detector (adaptive
-  threshold + approxPolyDP fallback behind Canny), a torch toggle for low
-  light, and client-side downscale before upload.
+- ~~Clerk (front-desk) dashboard reads mostly zero~~ DONE (M10, ADR-0036):
+  clerks land on the front-desk dashboard — intake queue, firm-wide
+  documents outstanding, recent portal uploads, quick actions.
+- ~~Dashboard "Documents outstanding" card is a stale pre-M3 placeholder~~
+  DONE (M10): wired to countMissingRequiredDocuments, scoped firm-wide vs
+  assigned, links to Returns.
+- ~~Page detection quality "good enough", deferred to M10~~ DONE (M10):
+  multi-strategy detector (adaptive-threshold fallback), auto-capture on a
+  steady quad, drag-to-adjust corners on review. Torch toggle + client-side
+  downscale remain future candidates (not customer-noted). Real-device pass
+  pending with Satinder (TESTING.md M10 checklist).
 - Portal upload round trip measured at ~7.7 s for a 189 KB phone photo
   through a tunnel (app-proxied multipart + synchronous ClamAV scan,
   ADR-0016). Fine at this size; the M5 pg-boss move takes scanning out of
@@ -570,17 +611,12 @@ _Last updated: 2026-07-23 (M9 hardening + import complete — 206 Vitest / 31 Pl
 - AWS budget alarm skipped for now (new account on free credits with
   automatic credit-exhaustion notifications).
 
-## NEXT 3 CONCRETE STEPS (M10 — polish + deploy)
-1. Backlogged polish, all customer-noted: front-desk (clerk) dashboard
-   variant; wire the stale "Documents outstanding" dashboard card; jscanify
-   capture-quality improvements (drag-corners, auto-capture, multi-strategy
-   detector); pixel-accurate e-sign placement (pdf.js overlay); AI usage log
-   staff viewer; empty/error/loading states + print styles.
-2. Deployment runbook: SES production access + firm-domain DKIM/SPF/DMARC
-   (see KNOWN BUGS), KMS key, Twilio webhook on the public URL, backup
-   schedule (pnpm backup), Stripe live keys, marketing/pricing stub.
-3. Final E2E sweep + demo walkthrough script (acceptance: walkthrough
-   executes cleanly).
+## NEXT CONCRETE STEPS (post-M10 — no milestones remain)
+1. Satinder: M10 real-device pass (TESTING.md "Manual checklist — M10") and,
+   optionally, the M6 remote-signing phone check.
+2. Production deployment per docs/DEPLOYMENT.md — start with §4 (SES
+   production access + firm-domain DNS: approvals take days).
+3. Demo to Joey using docs/WALKTHROUGH.md on a fresh `pnpm db:reset`.
 
 M8 leftovers worth knowing:
 - **Real-model path VERIFIED (2026-07-23).** A real ANTHROPIC_API_KEY was
@@ -593,5 +629,5 @@ M8 leftovers worth knowing:
   makes them mis-assert AND costs tokens. Blank it for tests too:
   `ANTHROPIC_API_KEY= EMAIL_MODE=outbox TWILIO_ACCOUNT_SID= TWILIO_AUTH_TOKEN= TWILIO_FROM_NUMBER= pnpm test`
   (mock mode is what the suite is written for). Saved as a memory.
-- The AI usage log (ai_interaction) has no staff-facing viewer yet (audit
-  page candidate, M10 polish).
+- ~~The AI usage log has no staff-facing viewer~~ DONE (M10, ADR-0036):
+  Settings → AI usage, gated by audit.view.

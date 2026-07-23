@@ -27,7 +27,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
       <div className="flex-1 flex flex-col min-w-0">
         <Topbar />
         {ctx.readOnly && (
-          <div className="bg-red-50 border-b border-red-200 text-red-800 text-sm px-6 py-2.5">
+          <div className="bg-red-50 border-b border-red-200 text-red-800 text-sm px-6 py-2.5 print:hidden">
             <strong>Read-only mode.</strong> The subscription is inactive — all data is safe and
             viewable, but changes are paused.{" "}
             {ctx.role === "owner" ? (
@@ -40,7 +40,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
           </div>
         )}
         {showTrialBanner && (
-          <div className="bg-indigo-50 border-b border-indigo-100 text-indigo-800 text-sm px-6 py-2.5">
+          <div className="bg-indigo-50 border-b border-indigo-100 text-indigo-800 text-sm px-6 py-2.5 print:hidden">
             Free trial — {trialDaysLeft} day(s) remaining.{" "}
             {ctx.role === "owner" && (
               <Link href="/app/settings/billing" className="underline underline-offset-2">

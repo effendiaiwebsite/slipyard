@@ -385,3 +385,44 @@ SES_FROM_ADDRESS):
    "No texts (STOP)", contact log entry appears; next SMS send skips with
    "opted out of texts". Text START → tag clears.
 4. Reminder policy on with a due return → real SMS/email nudge arrives.
+
+## Automated coverage (M10)
+
+- `tests/dashboard.test.ts` — countMissingRequiredDocuments (missing REQUIRED
+  items only; assignee scoping via the engagement; org isolation) and
+  listRecentPortalUploads (portal-sourced only, newest first, limit,
+  isolation).
+- `tests/ai.test.ts` — listAiInteractionsWithUsers resolves user names, keeps
+  newest-first ordering, stays tenant-isolated.
+- `e2e/m10.spec.ts` — front-desk clerk dashboard (intake count vs DB,
+  firm-wide documents outstanding, portal-uploads card, quick actions; the
+  personal-variant header is gone); owner "Documents outstanding" card
+  matches the DB and links to Returns ("Arrives in M3" placeholder gone);
+  pdf.js paints the draft editor's page box (canvas-pixel probe through the
+  new /api/esign/[id]/source route) with placement + cancel still working
+  on top; AI usage viewer lists a mock assistant run for the owner and
+  denies the clerk; styled staff 404; marketing page pricing.
+- NOTE `m10.spec.ts` sorts alphabetically between m1 and m2 — it depends
+  only on the fresh seed, and its writes are additive (one mock AI run) or
+  self-cleaning (draft signature request canceled in-test).
+
+## Manual checklist — M10 (for Satinder, real device)
+
+The capture-quality pass (customer-deferred from the M4 device run) is
+browser-only code that unit tests can't exercise — same tunnel setup as the
+M4 run:
+
+- [ ] Low-contrast scene (white paper on a pale counter): the outline now
+      appears where M4's build gave up (adaptive-threshold fallback).
+- [ ] Auto-capture: hold the phone steady over a page — the shutter fires
+      itself after ~1.2 s; the checkbox turns the behavior off.
+- [ ] Corner adjustment: on the review screen, "Adjust the corners myself"
+      → drag all four handles → "Straighten with these corners" yields a
+      clean warp; "Go back" returns without changes.
+- [ ] Fallback intact: deny camera permission → native camera input still
+      works end-to-end.
+- [ ] E-sign editor on desktop: the draft editor shows the real PDF page
+      behind the boxes; dropping a field on a form line lands the stamp on
+      that line in the executed PDF.
+- [ ] Print: the Reports page and an invoice PDF print without sidebar/nav
+      chrome (Ctrl+P anywhere in the staff app).

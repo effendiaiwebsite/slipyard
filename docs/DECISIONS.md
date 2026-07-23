@@ -458,3 +458,45 @@ The client component caps concurrency (3) and shows per-file status by polling
 alternative manifest-CSV mapping of filenames→clients was deferred — the
 drop-to-one-client flow is the smallest correct build and covers the firm's
 migration need; add a manifest mode if a customer asks.)
+
+## ADR-0036 (2026-07-23) — AI usage viewer is gated by audit.view; front-desk dashboard is firm-wide
+Two M10 polish decisions:
+- **AI usage log viewer** (/app/settings/ai-usage) lists every ai_interaction
+  row — asker, feature, tools used (names + result counts only), model, token
+  counts, and the full prompt/response for spot review. It is gated by the
+  EXISTING `audit.view` action (owner/admin) rather than a new permission: the
+  page is an audit surface (PROGRESS called it the "audit page candidate"),
+  prompts may quote scrubbed client context that accountants/clerks outside a
+  client's scope should not browse firm-wide, and reusing the action keeps the
+  matrix at M9's shape. Revisit only if Joey wants accountants to see their
+  own runs (listAiInteractions already supports a userId filter).
+- **Front-desk (clerk) dashboard** replaces the personal variant for clerks,
+  which read as zeros (nothing is ever assigned to a clerk — customer-noted
+  2026-07-22). It is deliberately FIRM-WIDE: intake queue, documents
+  outstanding, awaiting-docs count, recent portal uploads — matching ADR-0023
+  (front desk sees all clients, issues portal links, mass-sends). No new data
+  authority: every number comes from reads the clerk role could already reach
+  via the sidebar. The "Documents outstanding" card (all variants) now shows
+  countMissingRequiredDocuments — missing REQUIRED checklist items (the same
+  completeness rule auto-advance and reminders use), scoped to the assignee on
+  the accountant's personal variant.
+
+## ADR-0037 (2026-07-23) — Pixel-accurate e-sign placement: pdf.js paints the M6 boxes
+The M6 placement editor kept its whole geometry model (ADR-0025: fractional
+top-left coords on aspect-true page boxes; pdf-lib converts at stamp time).
+M10 adds pdfjs-dist rendering the REAL page into each box's background
+canvas, so what staff see while dragging is the actual form — pixel-accurate
+placement without touching the data shape, the stamp path, or the tests.
+Decisions inside that:
+- The render is COSMETIC and optional: pointer events stay on the box, and
+  any failure (fetch, worker, parse) leaves the M6 blank boxes — the editor
+  never blocks on pdf.js.
+- Bytes come from a new same-origin route /api/esign/[id]/source (staff
+  session, signatures.view with assignment scoping, audited, clean-docs
+  only) because fetch()ing a presigned S3 URL would require opening the
+  bucket's CORS to the app origin — a bucket-config dependency the presigned
+  "View the form" tab-open never had. Same-origin keeps CSP connect-src at
+  'self'.
+- The pdf.js worker is copied to /public/vendor on postinstall (same
+  mechanism as jscanify/OpenCV, §6 no-CDN posture); the main library is
+  Next-bundled. No CSP additions were needed.

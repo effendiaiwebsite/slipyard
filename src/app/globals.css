@@ -124,3 +124,31 @@ body {
   outline: 4px solid #303fc3;
   outline-offset: 2px;
 }
+
+/*
+ * Print (M10): reports, invoices and client pages print as clean documents.
+ * Navigation chrome carries Tailwind's print:hidden; the rules here cover
+ * what utility classes can't reach from server components.
+ */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  html,
+  body {
+    background: #fff;
+  }
+  /* Actions are meaningless on paper. */
+  button {
+    display: none !important;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+  /* Subscription/trial banners are screen furniture. */
+  .print-hide,
+  [role="status"].print-hide {
+    display: none !important;
+  }
+}
