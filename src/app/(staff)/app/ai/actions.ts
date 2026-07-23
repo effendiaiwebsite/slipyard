@@ -19,6 +19,7 @@ import {
 } from "@/lib/ai/service";
 import { sendClientMessage } from "@/lib/client-messaging";
 import { viewAssignedOnlyFilter } from "@/lib/clients";
+import { logger } from "@/lib/logger";
 import { authorize, can, PermissionError, ReadOnlyOrgError } from "@/lib/permissions";
 
 /**
@@ -49,6 +50,10 @@ async function authorizeAiUse(
 function friendlyAiError(e: unknown): string {
   if (e instanceof AiDisabledError) return e.message;
   if (e instanceof Error && e.message.includes("too many steps")) return e.message;
+  // The client only ever sees the generic line — but log the real cause, or
+  // API/TLS/DB failures are undiagnosable from the outside (learned the hard
+  // way when host antivirus intermittently MITM'd provider TLS).
+  logger.error({ err: e instanceof Error ? (e.stack ?? e.message) : String(e) }, "ai run failed");
   return "The AI service is unavailable right now — try again in a moment.";
 }
 

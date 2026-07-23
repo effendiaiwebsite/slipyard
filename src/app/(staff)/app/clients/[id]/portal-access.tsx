@@ -176,7 +176,7 @@ function IssueForm({
         required
         defaultValue={recipient === "client" ? (clientPhone ?? "") : ""}
         key={recipient} // reset the default when switching recipient
-        placeholder="Mobile number, e.g. +14165550123"
+        placeholder="Mobile number — any format"
         className="h-8 text-xs"
       />
 

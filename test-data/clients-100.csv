@@ -1,0 +1,104 @@
+Name,Type,Email,Phone,Preferred contact,Address,City,Province,Postal code,Date of birth,SIN,Tags,Assigned accountant,Referral source
+Marta Gauthier,individual,marta.gauthier@example.test,1 905 429 9973,Mail,368 Lakeshore Rd,Saskatoon,SK,s7k 1x8,,,,sam@lakesidecpa.test,Returning client
+Kofi Roy,Individual,kofi.roy@example.test,403.814.3442,Email,581 Wellington St,Halifax,NS,b3j 6t8,,,Newcomer,sam@lakesidecpa.test,Word of mouth
+Ade Gauthier,INDIVIDUAL,ade.gauthier@example.test,416-920-9784,,229 Cedar Cres,Edmonton,AB,T5J0A1,01/04/1990,919 236 752,,sam@lakesidecpa.test,Community centre
+Ade Kim,INDIVIDUAL,ade.kim@example.test,(604) 387-1101,Phone call,296 Dundas St,Moncton,NB,e1c 8p0,"May 1, 1977",,Investor,,Community centre
+Lucas Bouchard,individual,lucas.bouchard@example.test,+1 (647) 565-1609,Text,710 Wellington St,Victoria,BC,V8W0B5,,,,,Walk-in
+Linh Ouellet,Individual,linh.ouellet@example.test,403-814-6774,,939 Queen St E,Saskatoon,SK,S7K0G1,13/07/1977,920396272,,sam@lakesidecpa.test,Word of mouth
+Fatima Roy,INDIVIDUAL,fatima.roy@example.test,(613) 503-5947,Mail,723 Granville St,Ottawa,ON,k1p 4j6,1960-01-23,,,sam@lakesidecpa.test,Walk-in
+Noah Côté,individual,noah.c.t@example.test,4165154602,SMS,681 Portage Ave,Edmonton,AB,T5J 8S6,,,,,Radio ad
+Sofia Singh,individual,sofia.singh@example.test,9027324683,Email,46 Birch Ave,Vancouver,BC,v6b 5e7,1941-03-20,961-101-870,,sam@lakesidecpa.test,Returning client
+Fatima Okafor,Individual,fatima.okafor@example.test,2049671606,Phone call,308 Birch Ave,Calgary,AB,T2P 1R1,,968 481 614,,sam@lakesidecpa.test,Community centre
+Priya Haddad,individual,priya.haddad@example.test,4167119717,email,636 King St W,St. John's,NL,A1C9H6,"August 21, 1946",988-763-090,Investor,,Radio ad
+Chen Kaur,individual,chen.kaur@example.test,(514) 401-1238,Phone call,933 Birch Ave,St. John's,NL,A1C 3J4,"August 21, 1975",,Referral,sam@lakesidecpa.test,Google
+Arjun Murphy,individual,arjun.murphy@example.test,+1 (709) 403-4502,Mail,370 Portage Ave,Hamilton,ON,L8P 9G6,,,Newcomer; Student,sam@lakesidecpa.test,Radio ad
+Ava Leblanc,individual,ava.leblanc@example.test,+16043029354,Email,583 Birch Ave,Québec City,QC,G1R1T3,1950-10-25,,,,Radio ad
+Siobhan Gauthier,INDIVIDUAL,siobhan.gauthier@example.test,+1 (416) 818-5238,,791 Barrington St,Charlottetown,PE,c1a 0j9,,,VIP,sam@lakesidecpa.test,Word of mouth
+Ivan Diallo,INDIVIDUAL,ivan.diallo@example.test,4038983661,,961 Water St,Halifax,NS,B3J 6B3,21/08/1940,,,sam@lakesidecpa.test,Walk-in
+Sanjay Johansson,INDIVIDUAL,sanjay.johansson@example.test,,,574 Cedar Cres,St. John's,NL,a1c 5e1,04/05/1954,,VIP,,Word of mouth
+Omar Ouellet,individual,omar.ouellet@example.test,604.259.5182,email,195 Birch Ave,Edmonton,AB,T5J 2G0,,,Rental income,sam@lakesidecpa.test,Walk-in
+Priya Ouellet,Individual,priya.ouellet@example.test,+1 (613) 329-9274,email,547 Main St,Moncton,NB,e1c 4e6,"June 22, 1990",998 756 589,,sam@lakesidecpa.test,Radio ad
+Liam Singh,INDIVIDUAL,liam.singh@example.test,1 403 584 6371,Mail,756 Dundas St,Edmonton,AB,t5j 7v9,"October 11, 1994",,Referral; Student,,Word of mouth
+Lucia Lambert,individual,lucia.lambert@example.test,1 905 316 8413,Phone call,884 Wellington St,Victoria,BC,v8w 8c1,"February 10, 1999",960284966,Self-employed,sam@lakesidecpa.test,Radio ad
+Camille Rossi,INDIVIDUAL,camille.rossi@example.test,6042655106,email,719 Barrington St,Vancouver,BC,v6b 4y0,10/10/1975,,Newcomer,,Community centre
+Kwame Fraser,Individual,kwame.fraser@example.test,709.313.7296,,677 Main St,Edmonton,AB,T5J3C5,12/11/1970,,,,Walk-in
+Fatima Rossi,individual,fatima.rossi@example.test,403.452.2062,,736 Maple Dr,Winnipeg,MB,R3C 8W4,"October 7, 1978",989226907,VIP,sam@lakesidecpa.test,Radio ad
+Jack Martel,individual,jack.martel@example.test,+1 (613) 675-4932,SMS,109 Cedar Cres,Montréal,QC,H2Y2Y9,17/01/1947,983 589 912,VIP,,Walk-in
+Amina Singh,individual,amina.singh@example.test,3063321651,SMS,532 Wellington St,Victoria,BC,V8W 7J9,1997-03-11,,,maria@lakesidecpa.test,Word of mouth
+Marta Kim,Individual,marta.kim@example.test,(902) 363-4653,Email,79 Maple Dr,Halifax,NS,B3J 9B0,1940-06-01,,Student,,Walk-in
+Ravi Park,INDIVIDUAL,ravi.park@example.test,+1 (416) 756-8221,Text,799 Jasper Ave,Mississauga,ON,L5B4Z9,,,,,Returning client
+Kwame Nowak,individual,kwame.nowak@example.test,,Email,215 Granville St,Vancouver,BC,v6b 4a3,"April 4, 1988",912587516,,sam@lakesidecpa.test,Google
+Olivia Tran,INDIVIDUAL,olivia.tran@example.test,1 902 827 9686,,968 King St W,Calgary,AB,t2p 7j9,,,,maria@lakesidecpa.test,Returning client
+Ava Campbell,Individual,ava.campbell@example.test,+1 (780) 342-9103,,555 Dundas St,Charlottetown,PE,c1a 8s9,1996-01-12,,,,Google
+Marta Morin,INDIVIDUAL,marta.morin@example.test,3062212220,Email,532 Lakeshore Rd,Hamilton,ON,l8p 4g2,20/08/1992,929617207,Self-employed; VIP,sam@lakesidecpa.test,Returning client
+Lucas Côté,individual,lucas.c.t@example.test,9054423963,Mail,645 Lakeshore Rd,Ottawa,ON,K1P 3X5,1949-02-13,,,sam@lakesidecpa.test,Returning client
+Nils Bouchard,Individual,nils.bouchard@example.test,3062775780,SMS,818 Queen St E,Montréal,QC,h2y 0v9,,,,sam@lakesidecpa.test,Word of mouth
+Priya Patel,Individual,priya.patel@example.test,,Phone call,903 Lakeshore Rd,Québec City,QC,g1r 3w1,1945-10-14,,,sam@lakesidecpa.test,Radio ad
+Yuki MacDonald,Individual,yuki.macdonald@example.test,613.544.5364,Text,231 Wellington St,Victoria,BC,V8W9R2,1944-12-22,950 040 253,,sam@lakesidecpa.test,Community centre
+Noah Murphy,Individual,noah.murphy@example.test,+16479881691,Mail,602 Granville St,Ottawa,ON,K1P7R3,"July 2, 1957",936977800,,sam@lakesidecpa.test,Google
+Noah Kim,individual,noah.kim@example.test,709-689-8393,Text,418 King St W,Victoria,BC,V8W7E6,"July 4, 1950",,,,Community centre
+Elena Lavoie,individual,elena.lavoie@example.test,1 902 251 9488,SMS,239 Barrington St,Hamilton,ON,L8P 1R8,,,Self-employed,,Returning client
+Ingrid Gagnon,individual,ingrid.gagnon@example.test,(416) 431-8993,,791 Wellington St,Calgary,AB,T2P 0K6,"September 3, 1961",,,,Word of mouth
+Liam Haddad,INDIVIDUAL,liam.haddad@example.test,+16134515710,Text,938 Lakeshore Rd,Calgary,AB,T2P2S0,1952-09-04,,Referral,,Word of mouth
+Anika Johansson,individual,anika.johansson@example.test,(905) 254-5139,Email,152 Portage Ave,Halifax,NS,B3J 3B6,1986-10-28,,,,Word of mouth
+Priya Fortin,INDIVIDUAL,priya.fortin@example.test,+1 (416) 399-8396,Mail,140 Maple Dr,St. John's,NL,a1c 1r1,"June 9, 1981",,,sam@lakesidecpa.test,Community centre
+Meera Nowak,INDIVIDUAL,meera.nowak@example.test,6048332485,,765 Water St,Victoria,BC,V8W 2S2,,983-169-004,,sam@lakesidecpa.test,Google
+Olga Kim,Individual,olga.kim@example.test,647-704-7780,,273 Lakeshore Rd,Halifax,NS,b3j 0s0,"June 28, 1957",,,sam@lakesidecpa.test,Word of mouth
+Jack Kim,Individual,jack.kim@example.test,613.539.1172,Email,613 Granville St,Winnipeg,MB,r3c 2z9,"August 20, 1940",,VIP; Self-employed,,Radio ad
+Wei Morin,INDIVIDUAL,wei.morin@example.test,2044474020,Email,225 Water St,Victoria,BC,V8W9J2,18/08/1956,,,,Google
+Zainab Andersson,individual,zainab.andersson@example.test,6137362739,email,144 Main St,Montréal,QC,h2y 8t4,1966-08-20,,,sam@lakesidecpa.test,Walk-in
+Amara Sharma,Individual,amara.sharma@example.test,(613) 329-2138,Mail,455 Queen St E,Mississauga,ON,l5b 3j9,,,,,Returning client
+Sanjay Ivanov,INDIVIDUAL,sanjay.ivanov@example.test,416.986.2803,,388 Main St,Halifax,NS,B3J4B0,"October 19, 1984",,,,Returning client
+Olivia Silva,Individual,olivia.silva@example.test,6045835661,Text,350 Birch Ave,Calgary,AB,t2p 6b5,,,,maria@lakesidecpa.test,Community centre
+Mateo MacDonald,INDIVIDUAL,mateo.macdonald@example.test,514-768-7990,Phone call,608 Main St,Winnipeg,MB,r3c 8c0,1964-05-21,,,,Walk-in
+Chloé Ivanov,Individual,chlo.ivanov@example.test,+19022853704,,355 Lakeshore Rd,Saskatoon,SK,S7K5S7,,990072142,,,Word of mouth
+Fatima Park,INDIVIDUAL,fatima.park@example.test,+19058873143,Phone call,819 Dundas St,Moncton,NB,E1C 3W6,09/01/1989,,,,Radio ad
+Priya Campbell,Individual,priya.campbell@example.test,(780) 998-1149,,493 King St W,Hamilton,ON,L8P 5A9,03/05/1969,926-727-314,,sam@lakesidecpa.test,Radio ad
+Sven Bergeron,INDIVIDUAL,sven.bergeron@example.test,+17095015586,Phone call,450 Portage Ave,Ottawa,ON,K1P 3T6,1943-08-10,,Investor; Rental income,sam@lakesidecpa.test,Radio ad
+Kofi Karim,Individual,kofi.karim@example.test,+19024109102,Text,130 Birch Ave,Saskatoon,SK,S7K 0Y5,"March 6, 1963",927 082 347,Student,,Community centre
+Nils Kowalski,Individual,nils.kowalski@example.test,1 416 415 1909,Email,562 Dundas St,Calgary,AB,T2P3S3,03/11/1989,,Senior; Student,maria@lakesidecpa.test,Radio ad
+Tariq Patel,INDIVIDUAL,tariq.patel@example.test,+14164712547,,728 Lakeshore Rd,Mississauga,ON,l5b 2n9,10/03/1996,,,sam@lakesidecpa.test,Walk-in
+Yuki Gauthier,INDIVIDUAL,yuki.gauthier@example.test,+12044458826,,160 Lakeshore Rd,Victoria,BC,V8W 7N1,1980-04-13,,Self-employed,sam@lakesidecpa.test,Word of mouth
+Ade Sharma,Individual,ade.sharma@example.test,+1 (604) 514-3092,Text,200 Dundas St,Ottawa,ON,K1P5H3,,982 056 566,Newcomer,,Returning client
+Lucas Ivanov,individual,lucas.ivanov@example.test,(613) 322-6681,email,941 Lakeshore Rd,Winnipeg,MB,R3C 7L4,1954-03-11,992 897 389,Referral,,Radio ad
+Priya Mensah,individual,priya.mensah@example.test,6135419843,Email,728 Maple Dr,Mississauga,ON,L5B 9G9,05/10/1974,,Rental income; Self-employed,maria@lakesidecpa.test,Radio ad
+Minh Ouellet,Individual,minh.ouellet@example.test,4162084174,Phone call,921 Jasper Ave,Mississauga,ON,L5B1N2,"April 24, 1943",,Self-employed,,Returning client
+Dmitri Gagnon,INDIVIDUAL,dmitri.gagnon@example.test,,Mail,354 Barrington St,Hamilton,ON,l8p 4y2,,,VIP,maria@lakesidecpa.test,Walk-in
+Amara Diallo,individual,amara.diallo@example.test,(306) 412-1780,Mail,702 Water St,Saskatoon,SK,S7K2R7,1985-06-07,,,sam@lakesidecpa.test,Google
+Ade Morin,individual,ade.morin@example.test,1 514 282 9330,email,682 Dundas St,Edmonton,AB,T5J 1T8,1954-09-25,,Rental income; VIP,maria@lakesidecpa.test,Returning client
+Liam Ouellet,individual,liam.ouellet@example.test,(306) 977-8198,SMS,196 Granville St,Saskatoon,SK,S7K5H9,10/09/1940,956412282,Student; Rental income,sam@lakesidecpa.test,Google
+Ava Pelletier,INDIVIDUAL,ava.pelletier@example.test,709-252-5732,email,78 Birch Ave,Québec City,QC,G1R 5T1,"November 3, 1988",949-451-348,Referral,,Walk-in
+Noah Diallo,individual,noah.diallo@example.test,1 613 243 8968,Text,900 Cedar Cres,Ottawa,ON,k1p 3p6,10/04/1972,,,,Returning client
+Lucas Park,individual,lucas.park@example.test,+12049169702,Mail,230 King St W,Winnipeg,MB,r3c 2y2,,,,sam@lakesidecpa.test,Radio ad
+Mia Ouellet,Individual,mia.ouellet@example.test,9024173596,SMS,629 Jasper Ave,Charlottetown,PE,c1a 4m8,,,,maria@lakesidecpa.test,Community centre
+Olivia Sharma,INDIVIDUAL,olivia.sharma@example.test,1 902 981 9232,Email,848 Dundas St,Saskatoon,SK,S7K8V8,,,,maria@lakesidecpa.test,Word of mouth
+Arjun Campbell,Individual,arjun.campbell@example.test,+1 (416) 459-1376,,530 King St W,Ottawa,ON,K1P 1K9,"December 9, 1951",,,maria@lakesidecpa.test,Google
+Nils Chen,individual,nils.chen@example.test,(403) 317-3090,SMS,222 King St W,Charlottetown,PE,c1a 1s6,16/10/1947,,Senior,,Community centre
+Chloé Patel,Individual,chlo.patel@example.test,780-643-9631,Email,383 King St W,Mississauga,ON,L5B8J2,1964-10-10,,Referral; Rental income,sam@lakesidecpa.test,Radio ad
+Amina Karim,INDIVIDUAL,amina.karim@example.test,+1 (403) 359-8709,,743 Water St,Saskatoon,SK,s7k 7j7,"November 27, 1952",,VIP; Self-employed,sam@lakesidecpa.test,Returning client
+Linh Fraser,INDIVIDUAL,linh.fraser@example.test,514-548-2406,Text,866 Water St,Toronto,ON,m5v 2r6,1959-04-03,,Newcomer,,Word of mouth
+Valentina Chen,INDIVIDUAL,valentina.chen@example.test,416-900-9339,,439 Jasper Ave,Toronto,ON,M5V7E5,13/08/1941,946-320-249,Newcomer,,Walk-in
+Linh Santos,INDIVIDUAL,linh.santos@example.test,+12048565977,Phone call,832 Barrington St,Québec City,QC,g1r 0e8,,981997745,,maria@lakesidecpa.test,Returning client
+Maple Ridge Landscaping Inc.,Business,office@mapleridgelandscap.example.test,+1 (604) 948-9086,Email,372 Birch Ave,Mississauga,ON,l5b 5s7,,,Referral,sam@lakesidecpa.test,Returning client
+Bluewater Marine Supply Ltd.,corp,office@bluewatermarinesup.example.test,1 905 595 7862,email,10 King St W,Victoria,BC,v8w 5y6,,,Senior,sam@lakesidecpa.test,Returning client
+Northgate Dental Corp.,Corporation,office@northgatedentalcor.example.test,1 416 932 3035,Mail,33 Water St,Toronto,ON,M5V3R4,,,Investor,maria@lakesidecpa.test,Community centre
+Prairie Sky Consulting Inc.,Corporation,office@prairieskyconsulti.example.test,+1 (204) 601-6503,Text,841 Dundas St,Vancouver,BC,V6B0N0,,,,sam@lakesidecpa.test,Returning client
+Harbourview Catering Ltd.,Business,office@harbourviewcaterin.example.test,1 902 961 3584,Phone call,539 Portage Ave,Winnipeg,MB,r3c 6e4,,,Newcomer,,Returning client
+Cedar & Stone Builders Inc.,Corporation,office@cedarstonebuilders.example.test,2042199414,Phone call,458 Wellington St,Vancouver,BC,v6b 5a3,,,Newcomer; Senior,sam@lakesidecpa.test,Community centre
+Lakefront Physio Corp.,Corporation,office@lakefrontphysiocor.example.test,204-865-9185,Text,981 Maple Dr,Moncton,NB,E1C0Y8,,,Rental income,maria@lakesidecpa.test,Word of mouth
+TrueNorth Logistics Ltd.,corp,office@truenorthlogistics.example.test,647.471.7203,,858 Wellington St,Edmonton,AB,T5J 0T8,,,Self-employed,sam@lakesidecpa.test,Word of mouth
+Birchwood Daycare Inc.,Business,office@birchwooddaycarein.example.test,(647) 923-9600,SMS,155 Jasper Ave,Saskatoon,SK,S7K 1K9,,,VIP; Senior,,Radio ad
+Granite Peak Roofing Ltd.,Business,office@granitepeakroofing.example.test,+17099222314,,583 Queen St E,Winnipeg,MB,R3C 5K5,,,,,Returning client
+Silver Birch Realty Corp.,corp,office@silverbirchrealtyc.example.test,4034449995,Mail,463 Queen St E,Calgary,AB,T2P 6Y8,,,,,Returning client
+Two Rivers Brewing Inc.,Corporation,office@tworiversbrewingin.example.test,6134011409,,344 Main St,Hamilton,ON,L8P 6R6,,,,sam@lakesidecpa.test,Word of mouth
+Anderson Family Trust,Trust,trustee.anderson@example.test,4037837959,,767 Water St,Vancouver,BC,V6B2Z6,,,Investor,sam@lakesidecpa.test,Community centre
+Kowalski Estate Trust,Trust,,+14038453837,Email,574 Dundas St,Montréal,QC,H2Y7H4,,,,sam@lakesidecpa.test,Google
+Nguyen Family Trust,Trust,trustee.nguyen@example.test,6472096261,,433 Cedar Cres,Québec City,QC,G1R1W9,,,Senior,,Returning client
+Fraser Grandchildren Trust,Trust,,+1 (416) 938-5596,,352 Maple Dr,Calgary,AB,T2P9K3,,,,sam@lakesidecpa.test,Radio ad
+Bergeron Spousal Trust,Trust,trustee.bergeron@example.test,9052281144,Phone call,85 King St W,Vancouver,BC,V6B 2H7,,,,,Google
+Haddad Family Trust,Trust,trustee.haddad@example.test,4035492322,email,859 Maple Dr,Vancouver,BC,v6b 8p5,,,VIP,,Community centre
+Campbell Legacy Trust,Trust,,1 709 961 2557,SMS,694 Granville St,Toronto,ON,M5V7V6,,,,sam@lakesidecpa.test,Radio ad
+Petrov Family Trust,Trust,trustee.petrov@example.test,604-480-6828,email,94 Granville St,Edmonton,AB,T5J4E8,,,Investor; Self-employed,,Word of mouth
+,Individual,no.name@example.test,416-555-0000,Email,1 Main St,Toronto,ON,M5V 1A1,1980-01-01,,,,Google
+Badsin Example,Individual,badsin@example.test,(604) 555-0111,sms,22 Water St,Vancouver,BC,V6B 2W9,1975-05-05,123456789,,,Radio ad
+Odd Data Example,Partnership,not-an-email,12345,carrier pigeon,9 Birch Ave,Halifax,NS,B3J 9Z9,31/02/1990,,Investor,kara@lakesidecpa.test,Walk-in

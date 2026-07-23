@@ -9,16 +9,21 @@ import { hashInviteToken } from "@/lib/invites";
 import { logger } from "@/lib/logger";
 import { sendEmail, sendSms } from "@/lib/messaging";
 import { authorize } from "@/lib/permissions";
+import { phonePreprocess } from "@/lib/phone";
 
 const inviteSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().trim().toLowerCase().email(),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^\+1\d{10}$/, "Phone must be E.164 Canadian format, e.g. +14165551234")
-    .optional()
-    .or(z.literal("")),
+  // Any common format is accepted and normalised to E.164 (lib/phone.ts).
+  phone: z.preprocess(
+    phonePreprocess,
+    z
+      .string()
+      .trim()
+      .regex(/^\+1\d{10}$/, "That doesn't look like a Canadian mobile number — 10 digits, any format.")
+      .optional()
+      .or(z.literal(""))
+  ),
   role: z.enum(["admin", "accountant", "clerk"]), // owner is never invited — ownership transfers are a settings op for later
 });
 

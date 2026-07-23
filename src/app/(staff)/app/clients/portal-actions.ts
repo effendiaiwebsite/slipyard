@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireStaff } from "@/lib/context";
 import { sendEmail } from "@/lib/messaging";
 import { authorize, PermissionError, ReadOnlyOrgError } from "@/lib/permissions";
+import { phonePreprocess } from "@/lib/phone";
 import { mintPortalLink } from "@/lib/portal-tokens";
 import { sendSms } from "@/lib/messaging";
 
@@ -22,10 +23,14 @@ const issueSchema = z.object({
   recipient: z.enum(["client", "helper"]),
   recipientName: z.string().trim().min(2).max(120).optional(),
   helperRelationship: z.string().trim().max(80).optional(),
-  recipientPhone: z
-    .string()
-    .trim()
-    .regex(/^\+[1-9]\d{6,14}$/, "Phone must be in +1… format (E.164)"),
+  // Any common format is accepted and normalised to E.164 (lib/phone.ts).
+  recipientPhone: z.preprocess(
+    phonePreprocess,
+    z
+      .string()
+      .trim()
+      .regex(/^\+[1-9]\d{6,14}$/, "That doesn't look like a mobile number — 10 digits, any format.")
+  ),
   includeHousehold: z.boolean(),
 });
 

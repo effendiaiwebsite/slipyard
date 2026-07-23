@@ -194,7 +194,7 @@ export function EmployeesManager({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="inv-phone">Mobile (optional, for SMS invite)</Label>
-                <Input id="inv-phone" name="phone" placeholder="+14165551234" disabled={disabled} />
+                <Input id="inv-phone" name="phone" placeholder="e.g. 416-555-1234 (any format)" disabled={disabled} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="inv-role">Role</Label>

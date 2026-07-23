@@ -6,6 +6,7 @@ import { applyAutoAdvance, instantiateChecklist } from "@/lib/checklists";
 import { requireStaff, type StaffContext } from "@/lib/context";
 import { encryptField, isValidSin } from "@/lib/crypto";
 import { authorize, PermissionError, ReadOnlyOrgError } from "@/lib/permissions";
+import { phonePreprocess } from "@/lib/phone";
 
 /**
  * Client-hub mutations (M2). Every one: requireStaff → zod → authorize()
@@ -50,13 +51,17 @@ const clientFieldsSchema = z.object({
     .or(z.literal(""))
     .transform((v) => (v === "" ? null : v))
     .optional(),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^\+1\d{10}$/, "Phone must be E.164 Canadian format, e.g. +14165551234")
-    .or(z.literal(""))
-    .transform((v) => (v === "" ? null : v))
-    .optional(),
+  // Any common format is accepted and normalised to E.164 (lib/phone.ts).
+  phone: z.preprocess(
+    phonePreprocess,
+    z
+      .string()
+      .trim()
+      .regex(/^\+1\d{10}$/, "That doesn't look like a Canadian phone number — 10 digits, any format.")
+      .or(z.literal(""))
+      .transform((v) => (v === "" ? null : v))
+      .optional()
+  ),
   preferredChannel: z.enum(["email", "sms", "phone", "mail"]),
   addressLine1: optional(200),
   city: optional(100),

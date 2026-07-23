@@ -98,7 +98,7 @@ export function ClientForm({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="phone">Mobile / phone (+1…)</Label>
-          <Input id="phone" name="phone" placeholder="+14165551234" defaultValue={v.phone} />
+          <Input id="phone" name="phone" placeholder="e.g. 416-555-1234 (any format)" defaultValue={v.phone} />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="addressLine1">Address</Label>
