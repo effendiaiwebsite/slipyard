@@ -57,9 +57,9 @@ export const defaultReminderSettings: ReminderSettings = {
 
 export type OrgSettings = {
   ai_enabled: boolean;
-  /** 'all_read' (default): accountants read all firm clients, write assigned.
-   *  'assigned_only': accountants see only assigned clients. Confirm default
-   *  with customer (docs/DECISIONS.md ADR-0004). */
+  /** 'assigned_only' (default, ADR-0004): accountants see only their assigned
+   *  clients. 'all_read': accountants read all firm clients, write assigned —
+   *  the shared-visibility option for firms that prefer it. */
   accountant_scope_mode: "all_read" | "assigned_only";
   /** Absent on orgs created before M5 — read via reminderSettings(). */
   reminders?: ReminderSettings;
@@ -67,7 +67,8 @@ export type OrgSettings = {
 
 export const defaultOrgSettings: OrgSettings = {
   ai_enabled: true,
-  accountant_scope_mode: "all_read",
+  // Customer decision (ADR-0004): accountants see only their assigned book.
+  accountant_scope_mode: "assigned_only",
 };
 
 /** Settings-with-defaults accessor — pre-M5 orgs have no `reminders` key. */

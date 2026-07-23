@@ -127,6 +127,13 @@
       "when": 1784717093938,
       "tag": "0017_m5_pgboss_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784770799458,
+      "tag": "0018_m5b_accountant_scope_default",
+      "breakpoints": true
     }
   ]
 }

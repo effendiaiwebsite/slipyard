@@ -1,0 +1,1 @@
+ALTER TABLE "org" ALTER COLUMN "settings" SET DEFAULT '{"ai_enabled":true,"accountant_scope_mode":"assigned_only"}'::jsonb;

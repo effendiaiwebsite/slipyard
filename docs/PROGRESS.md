@@ -212,6 +212,17 @@ _Last updated: 2026-07-22 (M5 complete — real-SMS live test pending Twilio cre
 - Twilio delivery-status callbacks (delivered/undelivered) aren't wired —
   outbox rows show what the API accepted, not carrier delivery. Twilio's
   console covers forensics until this matters.
+- **Email deliverability / SES sandbox (deploy-time, M10).** Verified 2026-07-22:
+  real SES send works, but (a) the account is in the SES SANDBOX — it only
+  delivers to SES-verified recipients; sending to any other address returns
+  MessageRejected, which the send log correctly surfaces as Failed. Request
+  SES production access before real client email. (b) The test mail landed
+  in Gmail spam because it was sent FROM a gmail.com address (fails gmail's
+  DMARC when sent via SES) with no domain authentication. Deploy fix: verify
+  the FIRM'S OWN domain in SES (yields DKIM CNAMEs), add SPF
+  (`include:amazonses.com`) + DMARC records, send From that domain (never
+  gmail.com), optionally a custom MAIL FROM subdomain, then warm up volume.
+  Belongs in the M10 deployment runbook.
 - KMS_KEY_ID intentionally empty in dev (S3 default encryption); real KMS
   key at production setup.
 - Host antivirus (Norton) can blacklist upload URLs after seeing EICAR-like
@@ -244,6 +255,13 @@ _Last updated: 2026-07-22 (M5 complete — real-SMS live test pending Twilio cre
   segments, but a shortener-style compact token is an easy M5+ tweak if
   carriers mangle long links in practice.
 - Portal "Sign a form" card is a static placeholder until M6.
+- **Clerk (front-desk) dashboard is the personal/assigned-to-me variant, which
+  reads mostly zero for clerks** (nothing is ever assigned to a clerk).
+  Customer-noted 2026-07-22; logged for M10 polish. Their actual workflow
+  (all-clients list, document intake queue, portal links, messaging) works
+  via the sidebar — only the /app landing page isn't tailored. M10 build: a
+  front-desk dashboard (documents in intake, firm-wide clients awaiting docs,
+  recent portal activity).
 - **Page detection quality is "good enough", deferred to M10 polish**
   (customer decision 2026-07-22, after the real-device run). jscanify's
   single Canny+Otsu pass misses low-contrast scenes — white paper on a pale
@@ -261,14 +279,31 @@ _Last updated: 2026-07-22 (M5 complete — real-SMS live test pending Twilio cre
   the request and should cut the client-visible wait.
 
 ## NEEDS SATINDER'S / JOEY'S REVIEW
-- ADR-0004 accountant_scope_mode default (carried over from M0).
+- ~~ADR-0004 accountant_scope_mode default~~ RESOLVED 2026-07-22 (Satinder):
+  accountants see ONLY assigned clients → default becomes `assigned_only`.
+  Code change is a pre-M6 follow-up (see ADR-0004 + IN PROGRESS).
 - ~~M4 manual verification~~ DONE 2026-07-22 with Satinder over a
   Cloudflare tunnel on a real handset (TESTING.md "Manual checklist — M4").
   Capture-detection tuning consciously deferred to M10.
-- ADR-0019: clerks may issue/revoke portal links (front-desk workflow) —
-  confirm Joey's comfortable with that.
+- ~~ADR-0019: clerks issue/revoke portal links~~ CONFIRMED 2026-07-22
+  (Satinder, ADR-0023): front desk sees all clients, issues portal links,
+  AND mass-sends templated SMS/email. No code change — blesses the matrix.
 - ~~ADR-0013 stage names~~ RESOLVED by ADR-0015: stages are per-org editable
   (Settings → Workflow stages); Joey tunes his own template.
+
+## M5 REAL-PROVIDER VERIFICATION (2026-07-22, with Satinder)
+- Twilio SMS: LIVE — real text delivered to a handset through the product
+  path (template → message row → outbox → Twilio SID SMe765af1…). Account is
+  full (not trial). "Real SMS with keys" acceptance bar MET.
+- SES email: LIVE — real email delivered via SES (msg id 010d019f8c85b690…);
+  IAM `ses-send` inline policy on accountant-crm-dev-app, gmail identity
+  verified, EMAIL_MODE=ses. Still in the SES sandbox (verified recipients
+  only) — request production access before real client email.
+- STOP/START: webhook proven via a locally-signed simulated inbound POST
+  (scripts/simulate-inbound-sms.ts — deleted after); real text-STOP needs a
+  public tunnel (Twilio → webhook) and is a later manual step.
+- Test-only leftover: a real phone number sits on Ruth Okafor's seed record
+  for these tests — REVERT (reseed or set back to +14165550105) before M6.
 
 ## M3 PREREQUISITES (done 2026-07-21 with Satinder)
 - Dev S3 bucket `accountant-crm-dev` (ca-central-1, versioned, private);

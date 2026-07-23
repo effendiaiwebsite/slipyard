@@ -98,8 +98,8 @@ export function OrgSettingsForm({
           disabled={disabled}
           className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm"
         >
-          <option value="all_read">Read all firm clients, edit only assigned (default)</option>
-          <option value="assigned_only">See only assigned clients</option>
+          <option value="assigned_only">See only assigned clients (default)</option>
+          <option value="all_read">Read all firm clients, edit only assigned</option>
         </select>
       </div>
       <div className="flex items-center gap-3">

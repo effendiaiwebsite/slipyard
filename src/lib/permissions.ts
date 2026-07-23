@@ -9,9 +9,10 @@ import type { OrgSettings } from "@/db/schema";
  * Roles:
  *  owner      — everything incl. billing, employee management, org settings.
  *  admin      — everything except billing and org deletion.
- *  accountant — full read/write on clients assigned to them; read-only on the
- *               rest of the firm (org setting accountant_scope_mode can
- *               restrict to assigned-only; see ADR-0004).
+ *  accountant — full read/write on clients assigned to them. By default
+ *               (accountant_scope_mode 'assigned_only', ADR-0004) they see
+ *               ONLY their assigned clients; an org can switch to 'all_read'
+ *               for firm-wide read + assigned-only write.
  *  clerk      — read-only on ALL clients; may add documents to the intake
  *               queue and send templated reminders; no edits, no exports of
  *               SIN-bearing data.

@@ -19,11 +19,16 @@ bypass RLS.
 `invitation.token_hash` (and portal_token later) store a hash; the raw token
 exists only in the sent link. A DB leak must not yield live links.
 
-## ADR-0004 (2026-07-21) — accountant_scope_mode default 'all_read'
-Spec leaves the default open ("confirm with customer"). Default: accountants
-read all firm clients, write only assigned. Rationale: small-firm reality
-(colleagues cover for each other); the restrictive mode exists as a per-org
-setting. **Needs Joey's confirmation** — flagged in PROGRESS.md.
+## ADR-0004 (2026-07-21; RESOLVED 2026-07-22) — accountant_scope_mode default
+Spec left the default open ("confirm with customer"). **Customer decision
+(Satinder, 2026-07-22): accountants see ONLY their assigned clients** — the
+default is `assigned_only`, not `all_read`. `all_read` stays available as the
+per-org setting for firms that prefer shared visibility. Implementation
+(pre-M6 follow-up): flip `defaultOrgSettings.accountant_scope_mode`, the
+org-settings column default, and the seed so Lakeside runs assigned-only;
+adjust any e2e that assumed an accountant sees the whole book. The
+permission layer + `viewAssignedOnlyFilter` already enforce the mode — only
+the default changes.
 
 ## ADR-0005 (2026-07-21) — Idle timeout enforced in requireStaff, not middleware
 30-min idle is checked server-side against `auth_session.updated_at`
@@ -209,3 +214,15 @@ firms who texts STOP opts out of both — the safer reading; policy
 client_by_phone, SELECT-only). Reminder policy config hangs off
 org.settings.reminders with code-side defaults (disabled; 7 days; cadence
 3) — no backfill needed, pre-M5 orgs simply read defaults.
+
+## ADR-0023 (2026-07-22) — Clerk (front desk) may see all clients + send client messages
+Customer decision (Satinder, 2026-07-22), confirming the M4/M5 posture:
+front-desk/clerk accounts legitimately need to see the whole client book and
+reach clients — issue/revoke portal links for sign-up + doc upload
+(confirms ADR-0019) AND mass-send templated SMS/email from the dashboard
+(messages.send_templated, already clerk=allow in the matrix). Rationale: the
+clerk is who answers the phone and chases documents; the link alone grants
+nothing without the client's own OTP, and sends are template-based + logged
++ consent-aware (STOP). Contrast ADR-0004: this WIDENS clerk visibility to
+all clients while NARROWING accountants to assigned-only — different roles,
+different jobs. No matrix change needed; this blesses the existing rules.

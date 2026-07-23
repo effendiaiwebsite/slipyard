@@ -68,11 +68,11 @@ test("workflow board: sam drags his own card; it persists", async ({ page }) => 
   const card = page.locator(`[data-engagement="${RUTH_ENGAGEMENT}"]`);
   await expect(card).toBeVisible();
   await expect(card).toHaveAttribute("draggable", "true");
-  // An's engagement is Joey's — sam can view but not move it.
-  await expect(page.locator(`[data-engagement="abcabca1-0000-4000-8000-000000000003"]`)).toHaveAttribute(
-    "draggable",
-    "false"
-  );
+  // Assigned-only is the default (ADR-0004): sam's board shows only his own
+  // book — a colleague's engagement (An's, Joey's) isn't on it at all.
+  await expect(
+    page.locator(`[data-engagement="abcabca1-0000-4000-8000-000000000003"]`)
+  ).toHaveCount(0);
 
   // HTML5 DnD: dragstart on the card arms the board, drop lands the column.
   await card.dispatchEvent("dragstart");
