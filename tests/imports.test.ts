@@ -86,6 +86,17 @@ describe("row validation + SIN safety", () => {
     expect(nadia.mapped.dateOfBirth).toBeNull();
   });
 
+  it("blanks dates that don't exist on the calendar (Feb 31) but keeps real leap days", () => {
+    const p = parseCsv("Name,DOB\nOdd Data Example,31/02/1990\nLeap Day,29/02/2000\n");
+    const s = buildStagedRows(p, suggestMapping(p.headers));
+    const odd = s.rows.find((r) => r.mapped.displayName === "Odd Data Example")!;
+    expect(odd.warnings.join(" ")).toMatch(/isn't a real calendar date/i);
+    expect(odd.mapped.dateOfBirth).toBeNull();
+    const leap = s.rows.find((r) => r.mapped.displayName === "Leap Day")!;
+    expect(leap.warnings.join(" ")).toEqual(expect.not.stringMatching(/calendar/i));
+    expect(leap.mapped.dateOfBirth).toBe("2000-02-29");
+  });
+
   it("captures custom fields and normalises postal/phone/type", () => {
     const corp = staged.rows.find((r) => r.mapped.type === "corporation")!;
     expect(corp.mapped.postalCode).toBe("M4C 1B5");

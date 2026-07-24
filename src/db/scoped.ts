@@ -3,7 +3,7 @@ import { db, schema } from ".";
 import { DEFAULT_ENGAGEMENT_STAGES, type StageCategory } from "./schema";
 import { DEFAULT_MESSAGE_TEMPLATES } from "@/lib/templates";
 import { computeTotals, linesFromEntries } from "@/lib/timebilling";
-import type { MappedClient } from "@/lib/imports";
+import { isRealIsoDate, type MappedClient } from "@/lib/imports";
 
 /**
  * Org-scoped repository layer — the ONLY sanctioned path to tenant data.
@@ -2212,7 +2212,7 @@ export class OrgScope {
             city: m.city,
             province: m.province,
             postalCode: m.postalCode,
-            dateOfBirth: m.dateOfBirth,
+            dateOfBirth: m.dateOfBirth && isRealIsoDate(m.dateOfBirth) ? m.dateOfBirth : null,
             sinEncrypted: m.sinEncrypted,
             sinLast3: m.sinLast3,
             assignedAccountantId,

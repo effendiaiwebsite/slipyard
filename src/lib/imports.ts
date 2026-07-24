@@ -229,7 +229,24 @@ function isoOrWarn(y: number, mo: number, d: number, raw: string, ambiguousWarn?
     return { value: null, warn: `Date of birth "${raw}" is out of range — left blank.` };
   }
   const iso = `${y.toString().padStart(4, "0")}-${mo.toString().padStart(2, "0")}-${d.toString().padStart(2, "0")}`;
+  if (!isRealIsoDate(iso)) {
+    return { value: null, warn: `Date of birth "${raw}" isn't a real calendar date — left blank.` };
+  }
   return { value: iso, warn: ambiguousWarn };
+}
+
+/**
+ * True when `iso` (yyyy-mm-dd) names a date that exists on the calendar.
+ * Postgres rejects values like 1990-02-31 at insert, so staged rows must
+ * never carry them (also re-checked at commit for batches staged before
+ * this validation existed).
+ */
+export function isRealIsoDate(iso: string): boolean {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const [y, mo, d] = [+m[1], +m[2], +m[3]];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
 }
 
 function splitTags(raw: string): string[] {

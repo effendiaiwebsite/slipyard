@@ -9,6 +9,7 @@ import {
   suggestMapping,
   type StagedRow,
 } from "@/lib/imports";
+import { logger } from "@/lib/logger";
 import { authorize, can, PermissionError, ReadOnlyOrgError } from "@/lib/permissions";
 
 /**
@@ -180,7 +181,13 @@ export async function commitImport(batchId: string): Promise<CommitResult> {
   const denied = await auditedGate(ctx, "import_commit", { batchId });
   if (denied) return denied;
 
-  const res = await ctx.scope.commitImportBatch(batchId);
+  let res;
+  try {
+    res = await ctx.scope.commitImportBatch(batchId);
+  } catch (e) {
+    logger.error({ err: e instanceof Error ? (e.stack ?? e.message) : String(e), batchId }, "import commit failed");
+    return { error: "The import couldn't be committed — no clients were created. Check the review step for rows with warnings, or re-stage the file." };
+  }
   if (!res.ok) {
     return { error: res.reason === "not_found" ? "Import not found." : "This import was already committed." };
   }

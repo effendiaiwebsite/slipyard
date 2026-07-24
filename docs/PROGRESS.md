@@ -458,6 +458,33 @@ _Last updated: 2026-07-23 (M10 polish + deploy complete — ALL MILESTONES DONE;
     variant. m10.spec sorts between m1 and m2 — it is seed-only and
     additive/self-cleaning by design. Production build verified.
 
+- **Post-M10 fix (2026-07-23): import commit crashed on impossible calendar
+  dates.** test-data/clients-100.csv row "Odd Data Example" carries DOB
+  `31/02/1990`; normalizeDob's range check accepted Feb 31 → Postgres
+  rejected the insert → the WHOLE commit transaction failed as an unhandled
+  runtime error. Fixed three ways: isoOrWarn now calendar-validates (new
+  exported isRealIsoDate; leap days still pass), commitImportBatch re-checks
+  dates defensively (batches staged BEFORE the fix still carry the bad
+  value — re-staging is not required), and the commit action catches DB
+  errors into a friendly message + server log instead of crashing the page.
+  +1 Vitest (210). Customer's failing batch: just press Commit again — the
+  guard nulls the bad DOB (row-level warning already flagged it as ambiguous).
+- **Post-M10 diagnosis (2026-07-23): customer "AI chat wouldn't work"
+  (Satinder, org "Sandhu Tax").** NOT a code bug: reproduced the exact
+  server path (askAssistant, same org/user/key, empty org) — SUCCESS against
+  live claude-opus-4-8, and 3× HTTP 200 to the API. ai_interaction had zero
+  rows (the run threw before logging), key healthy, ai_enabled true, owner
+  role fine. Everything points at the KNOWN intermittent host-AV (Norton)
+  TLS interception (see 3b79640). The friendly-error catch now logs the real
+  cause — when it recurs, read the dev-server console for "ai run failed".
+  Note: the repro wrote one real ai_interaction row in Sandhu Tax's AI usage
+  viewer (asker Satinder, "How does the pipeline look?").
+- **Specs written, NOT scheduled (2026-07-23):** docs/SPEC_STRIPE_PAYMENTS.md
+  (M11 candidate — Stripe Connect Express, client invoice payment, cards +
+  Canadian PAD) and docs/SPEC_SMART_INTAKE.md (M12 candidate — portal
+  questionnaires, drafts-not-writes review). Build only when asked; email
+  sync deliberately deferred.
+
 ## IN PROGRESS
 - Nothing — ALL MILESTONES COMPLETE. The product is feature-complete against
   the spec; remaining work is deployment (docs/DEPLOYMENT.md) and the manual

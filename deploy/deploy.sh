@@ -19,12 +19,16 @@ git pull --ff-only
 echo "==> install (incl. dev deps — needed for next build + tsx migrate)"
 pnpm install --prod=false --frozen-lockfile
 
+# Load runtime env BEFORE the build — next build imports env.ts, which
+# fail-fasts if required vars are missing (also needed by db:migrate below).
+echo "==> load env ($ENV_FILE)"
+set -a; # shellcheck disable=SC1090
+source "$ENV_FILE"; set +a
+
 echo "==> build"
 pnpm build
 
 echo "==> migrate RDS (drizzle)"
-set -a; # shellcheck disable=SC1090
-source "$ENV_FILE"; set +a
 pnpm db:migrate
 
 echo "==> restart service"
