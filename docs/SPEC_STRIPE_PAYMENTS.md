@@ -4,6 +4,16 @@ _Status: SPEC ONLY — approved for design 2026-07-23, NOT scheduled. Build as
 M11 when the current debugging pass is done. Nothing in this document is
 implemented._
 
+## TL;DR (customer-approved 2026-07-23)
+
+Stripe Connect Express: the firm doesn't bring a Stripe account; onboarding
+creates one inline via Stripe's hosted flow (business details + bank entered
+on Stripe's pages, never ours). Clients pay invoices in the portal via a new
+`pay` scope — cards ~2.9% or Canadian PAD ~1% — money settles straight to
+the firm's bank, SlipYard never holds funds, and an optional platform fee is
+Joey's revenue lever. "Paid" is keyed to money confirmation (PAD settles in
+days), not checkout completion.
+
 ## Goal
 
 A client can pay a SlipYard invoice online (credit card or Canadian
@@ -120,6 +130,16 @@ stripe`, contact-log entry, audit as system `invoices.payment_received`.
 **Reconcile job:** pg-boss `payments-reconcile` (cron, like
 reminders-sweep) re-queries Stripe for payment rows stuck
 `pending|processing` > 7 days — webhook-miss insurance.
+
+## Rides along: billing-settings card (closes a known limitation)
+
+The org's default hourly rate and tax label/bps have been code-side defaults
+since M7 ("No billing-settings UI" in PROGRESS.md). The payments milestone
+adds the Settings → Billing & payments page anyway, so the card ships here:
+default hourly rate, tax label + rate (bps), editable by `org.update_settings`
+(owner/admin), persisted into `org.settings.billing` via the existing
+`billingSettings()` accessor. No schema change; per-entry/per-invoice
+overrides keep working exactly as in ADR-0030.
 
 ## Permissions
 

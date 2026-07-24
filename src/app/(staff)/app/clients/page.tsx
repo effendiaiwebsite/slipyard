@@ -20,6 +20,19 @@ export default async function ClientsPage() {
   const canCreate =
     !ctx.readOnly && can(ctx.actor, "clients.create", { orgId: ctx.orgId, type: "client" });
 
+  // Bulk distribute is a firm-wide reassignment: clients.update with no
+  // specific assignee → owner/admin only (accountants fail the 'assigned' rule).
+  const canDistribute =
+    !ctx.readOnly && can(ctx.actor, "clients.update", { orgId: ctx.orgId, type: "client" });
+
+  // Assignable accountants = active, non-clerk staff (the same rule the
+  // per-client picker uses). Clerks hold no client book.
+  const assignableAccountants = canDistribute
+    ? (await ctx.scope.listMemberships())
+        .filter((m) => m.membership.status === "active" && m.membership.role !== "clerk")
+        .map((m) => ({ id: m.user.id, name: m.user.name ?? m.user.email }))
+    : [];
+
   const data: ClientRow[] = rows.map((r) => ({
     id: r.client.id,
     name: r.client.displayName,
@@ -50,15 +63,24 @@ export default async function ClientsPage() {
             {active} active · {data.length - active} archived
           </p>
         </div>
-        {canCreate && (
-          <Button asChild>
-            <Link href="/app/clients/new">
-              <Plus /> New client
-            </Link>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href="/app/clients/households">Households</Link>
           </Button>
-        )}
+          {canCreate && (
+            <Button asChild>
+              <Link href="/app/clients/new">
+                <Plus /> New client
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
-      <ClientsTable data={data} />
+      <ClientsTable
+        data={data}
+        accountants={assignableAccountants}
+        canDistribute={canDistribute}
+      />
     </div>
   );
 }

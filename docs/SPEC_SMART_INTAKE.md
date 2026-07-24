@@ -4,6 +4,15 @@ _Status: SPEC ONLY — approved for design 2026-07-23, NOT scheduled. Build as
 M12 (after SPEC_STRIPE_PAYMENTS) when the current debugging pass is done.
 Nothing in this document is implemented._
 
+## TL;DR (customer-approved 2026-07-23)
+
+Portal questionnaires: one big-type question per screen with simple
+branching, upload questions that reuse the existing capture pipeline and
+satisfy checklist items, and a staff review surface where answers are
+drafts — field changes apply only on explicit staff approval (same posture
+as AI and import). SIN questions are rejected by the template validator
+outright.
+
 ## Goal
 
 Staff send a client a questionnaire ("2026 personal tax organizer") that the

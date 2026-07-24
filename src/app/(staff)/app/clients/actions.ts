@@ -5,6 +5,7 @@ import { z } from "zod";
 import { applyAutoAdvance, instantiateChecklist } from "@/lib/checklists";
 import { requireStaff, type StaffContext } from "@/lib/context";
 import { encryptField, isValidSin } from "@/lib/crypto";
+import { planDistribution } from "@/lib/distribution";
 import { authorize, PermissionError, ReadOnlyOrgError } from "@/lib/permissions";
 import { phonePreprocess } from "@/lib/phone";
 
@@ -269,6 +270,87 @@ export async function setClientStatus(
   revalidatePath("/app/clients");
   revalidatePath(`/app/clients/${clientId}`);
   return { ok: true };
+}
+
+// ---- bulk distribution (ADR-0040) --------------------------------------------
+
+export type DistributeSummaryRow = {
+  accountantId: string;
+  name: string;
+  added: number;
+  total: number;
+};
+type DistributeResult = { error?: string; ok?: boolean; summary?: DistributeSummaryRow[] };
+
+const distributeSchema = z.object({
+  clientIds: z.array(z.string().uuid()).min(1).max(2000),
+  accountantIds: z.array(z.string().min(1).max(64)).min(1).max(50),
+});
+
+/**
+ * Distribute the selected clients across the chosen accountants, workload-aware
+ * and keeping households together (planDistribution). This is a firm-wide bulk
+ * reassignment, so it is authorized as clients.update with NO specific
+ * assignee — the accountant 'assigned' rule can't satisfy that, which restricts
+ * it to owner/admin (same tier as the import wizard). Audited as op:distribute.
+ */
+export async function distributeClients(
+  clientIds: string[],
+  accountantIds: string[]
+): Promise<DistributeResult> {
+  const ctx = await requireStaff();
+  const parsed = distributeSchema.safeParse({ clientIds, accountantIds });
+  if (!parsed.success) return { error: "Pick at least one client and one accountant." };
+
+  const denied = await tryAuthorize(
+    ctx.scope,
+    ctx.actor,
+    "clients.update",
+    { orgId: ctx.orgId, type: "client" },
+    {
+      readOnlyOrg: ctx.readOnly,
+      orgSettings: ctx.orgSettings,
+      details: {
+        op: "distribute",
+        clients: parsed.data.clientIds.length,
+        accountants: parsed.data.accountantIds.length,
+      },
+    }
+  );
+  if (denied) return { error: denied };
+
+  // Every target must be an active, non-clerk member of THIS org.
+  const memberships = await ctx.scope.listMemberships();
+  const byUserId = new Map(memberships.map((m) => [m.user.id, m]));
+  const targets: (typeof memberships)[number][] = [];
+  for (const id of parsed.data.accountantIds) {
+    const m = byUserId.get(id);
+    if (!m || m.membership.status !== "active" || m.membership.role === "clerk") {
+      return { error: "Every chosen accountant must be an active staff member who isn't a clerk." };
+    }
+    targets.push(m);
+  }
+
+  // Only active, in-org clients are distributable (archived/foreign ids drop).
+  const clients = await ctx.scope.clientsForDistribution(parsed.data.clientIds);
+  if (clients.length === 0) return { error: "None of the selected clients can be reassigned." };
+
+  const load = await ctx.scope.clientLoadByAccountant(clients.map((c) => c.id));
+  const plan = planDistribution(
+    clients,
+    targets.map((m) => ({ id: m.user.id, currentLoad: load[m.user.id] ?? 0 }))
+  );
+
+  await ctx.scope.bulkAssignClients(plan.assignments);
+  revalidatePath("/app/clients");
+
+  const summary: DistributeSummaryRow[] = targets.map((m) => ({
+    accountantId: m.user.id,
+    name: m.user.name ?? m.user.email,
+    added: plan.added[m.user.id] ?? 0,
+    total: plan.totals[m.user.id] ?? 0,
+  }));
+  return { ok: true, summary };
 }
 
 // ---- notes & contact log -----------------------------------------------------

@@ -7,15 +7,18 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
+  type RowSelectionState,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, Search } from "lucide-react";
+import { ArrowUpDown, Search, Users, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CATEGORY_META, TYPE_LABELS } from "@/lib/clients";
 import type { StageCategory } from "@/db/schema";
+import { distributeClients, type DistributeSummaryRow } from "./actions";
 
 export type ClientRow = {
   id: string;
@@ -33,6 +36,8 @@ export type ClientRow = {
   city: string | null;
 };
 
+export type AccountantOption = { id: string; name: string };
+
 const typeFilters = ["All", "Individual", "Corporation", "Trust"] as const;
 
 function fmtDate(iso: string | null): string {
@@ -42,12 +47,24 @@ function fmtDate(iso: string | null): string {
 
 const col = createColumnHelper<ClientRow>();
 
-export function ClientsTable({ data }: { data: ClientRow[] }) {
+export function ClientsTable({
+  data,
+  accountants = [],
+  canDistribute = false,
+}: {
+  data: ClientRow[];
+  accountants?: AccountantOption[];
+  canDistribute?: boolean;
+}) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<(typeof typeFilters)[number]>("All");
   const [showArchived, setShowArchived] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const selectable = canDistribute && accountants.length > 0;
 
   const filtered = useMemo(
     () =>
@@ -66,8 +83,8 @@ export function ClientsTable({ data }: { data: ClientRow[] }) {
     [data, q, typeFilter, showArchived]
   );
 
-  const columns = useMemo(
-    () => [
+  const columns = useMemo(() => {
+    const base = [
       col.accessor("name", {
         header: "Client",
         cell: (info) => (
@@ -129,19 +146,55 @@ export function ClientsTable({ data }: { data: ClientRow[] }) {
           </div>
         ),
       }),
-    ],
-    []
-  );
+    ];
+
+    if (!selectable) return base;
+
+    const select = col.display({
+      id: "select",
+      header: ({ table }) => (
+        <input
+          type="checkbox"
+          className="rounded"
+          aria-label="Select all"
+          checked={table.getIsAllRowsSelected()}
+          ref={(el) => {
+            if (el) el.indeterminate = table.getIsSomeRowsSelected();
+          }}
+          onChange={table.getToggleAllRowsSelectedHandler()}
+        />
+      ),
+      cell: ({ row }) => (
+        <input
+          type="checkbox"
+          className="rounded"
+          aria-label={`Select ${row.original.name}`}
+          checked={row.getIsSelected()}
+          onClick={(e) => e.stopPropagation()}
+          onChange={row.getToggleSelectedHandler()}
+        />
+      ),
+    });
+    return [select, ...base];
+  }, [selectable]);
 
   const table = useReactTable({
     data: filtered,
     columns,
-    state: { sorting },
+    state: { sorting, rowSelection },
     onSortingChange: setSorting,
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: selectable,
+    getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
   });
+
+  const selectedIds = useMemo(
+    () => Object.keys(rowSelection).filter((id) => rowSelection[id]),
+    [rowSelection]
+  );
 
   return (
     <Card>
@@ -180,6 +233,29 @@ export function ClientsTable({ data }: { data: ClientRow[] }) {
           </label>
         </div>
       </CardHeader>
+
+      {selectable && selectedIds.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-900 text-white text-sm">
+          <span className="font-medium">
+            {selectedIds.length} client{selectedIds.length === 1 ? "" : "s"} selected
+          </span>
+          <button
+            onClick={() => setRowSelection({})}
+            className="text-slate-300 hover:text-white text-xs underline underline-offset-2"
+          >
+            Clear
+          </button>
+          <div className="ml-auto">
+            <button
+              onClick={() => setModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-white/10 hover:bg-white/20 px-3 py-1.5 text-sm font-medium"
+            >
+              <Users className="w-4 h-4" /> Distribute among accountants
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-xs text-slate-500 uppercase tracking-wide bg-slate-50/60">
@@ -227,6 +303,146 @@ export function ClientsTable({ data }: { data: ClientRow[] }) {
           </tbody>
         </table>
       </div>
+
+      {modalOpen && (
+        <DistributeModal
+          clientIds={selectedIds}
+          accountants={accountants}
+          onClose={() => setModalOpen(false)}
+          onDone={() => {
+            setModalOpen(false);
+            setRowSelection({});
+            router.refresh();
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+function DistributeModal({
+  clientIds,
+  accountants,
+  onClose,
+  onDone,
+}: {
+  clientIds: string[];
+  accountants: AccountantOption[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  // Default: distribute across everyone.
+  const [chosen, setChosen] = useState<Set<string>>(new Set(accountants.map((a) => a.id)));
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<DistributeSummaryRow[] | null>(null);
+
+  const chosenCount = chosen.size;
+  const estBase = chosenCount > 0 ? Math.floor(clientIds.length / chosenCount) : 0;
+  const estHigh = chosenCount > 0 && clientIds.length % chosenCount !== 0 ? estBase + 1 : estBase;
+
+  const toggle = (id: string) =>
+    setChosen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const run = () => {
+    setError(null);
+    startTransition(async () => {
+      const res = await distributeClients(clientIds, [...chosen]);
+      if (res.error) setError(res.error);
+      else setSummary(res.summary ?? []);
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-lg bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
+          <h2 className="text-base font-semibold">
+            {summary ? "Clients distributed" : "Distribute clients"}
+          </h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {summary ? (
+          <div className="px-5 py-4 space-y-3">
+            <p className="text-sm text-slate-600">
+              {clientIds.length} client{clientIds.length === 1 ? "" : "s"} shared out. New book sizes:
+            </p>
+            <ul className="space-y-1.5">
+              {summary
+                .slice()
+                .sort((a, b) => b.total - a.total)
+                .map((s) => (
+                  <li key={s.accountantId} className="flex items-center justify-between text-sm">
+                    <span className="text-slate-700">{s.name}</span>
+                    <span className="text-slate-500">
+                      <span className="font-medium text-emerald-600">+{s.added}</span> · {s.total} total
+                    </span>
+                  </li>
+                ))}
+            </ul>
+            <div className="pt-1 flex justify-end">
+              <Button onClick={onDone}>Done</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="px-5 py-4 space-y-4">
+            <p className="text-sm text-slate-600">
+              Share <span className="font-medium text-slate-800">{clientIds.length}</span> selected
+              client{clientIds.length === 1 ? "" : "s"} across the accountants you choose. Households
+              stay together, and each accountant’s current workload is taken into account.
+            </p>
+
+            <div className="space-y-1.5 max-h-56 overflow-y-auto">
+              {accountants.map((a) => (
+                <label
+                  key={a.id}
+                  className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-slate-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    className="rounded"
+                    checked={chosen.has(a.id)}
+                    onChange={() => toggle(a.id)}
+                  />
+                  <span className="text-sm text-slate-700">{a.name}</span>
+                </label>
+              ))}
+            </div>
+
+            {chosenCount > 0 && (
+              <p className="text-xs text-slate-500">
+                Roughly {estBase === estHigh ? estBase : `${estBase}–${estHigh}`} new client
+                {estHigh === 1 ? "" : "s"} each (before workload balancing).
+              </p>
+            )}
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="secondary" onClick={onClose} disabled={pending}>
+                Cancel
+              </Button>
+              <Button onClick={run} disabled={pending || chosenCount === 0}>
+                {pending ? "Distributing…" : `Distribute to ${chosenCount}`}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

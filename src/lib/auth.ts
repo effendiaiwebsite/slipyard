@@ -35,6 +35,41 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 10,
+    revokeSessionsOnPasswordReset: true,
+    async sendResetPassword({ user, url }) {
+      // Self-serve forgot-password (post-M10 fix). The reset email rides the
+      // org outbox like every other send, so in dev the link surfaces via
+      // `pnpm outbox`. Imports are lazy on purpose: scripts load this module
+      // for the password hasher, and messaging.ts is server-only.
+      const subject = "Reset your SlipYard password";
+      const body = [
+        `Hi ${user.name || "there"},`,
+        ``,
+        `Someone asked to reset the SlipYard password for this email address.`,
+        `If that was you, set a new password here (link expires in 1 hour):`,
+        url,
+        ``,
+        `If you didn't ask, you can ignore this message — your password is unchanged.`,
+        `Note: if you use an authenticator app for sign-in, you'll still need it.`,
+      ].join("\n");
+      const { listMembershipsForUser, OrgScope } = await import("@/db/scoped");
+      const memberships = await listMembershipsForUser(user.id);
+      if (memberships.length > 0) {
+        const { sendEmail } = await import("@/lib/messaging");
+        await sendEmail(new OrgScope(memberships[0].org.id, user.id), {
+          to: user.email,
+          subject,
+          body,
+          meta: { kind: "password_reset" },
+        });
+      } else if (env.EMAIL_MODE === "ses") {
+        // Pre-org account: no org outbox exists yet — deliver directly.
+        const { deliverEmail } = await import("@/lib/message-providers");
+        await deliverEmail(user.email, subject, body);
+      } else {
+        console.log(`\n[outbox:email] to=${user.email} subject="${subject}"\n${body}\n`);
+      }
+    },
   },
   socialProviders: features.googleOAuth
     ? {

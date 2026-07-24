@@ -9,6 +9,7 @@ import { hashInviteToken } from "@/lib/invites";
 import { logger } from "@/lib/logger";
 import { sendEmail, sendSms } from "@/lib/messaging";
 import { authorize } from "@/lib/permissions";
+import { resetStaffTwoFactor } from "@/lib/staff-recovery";
 import { phonePreprocess } from "@/lib/phone";
 
 const inviteSchema = z.object({
@@ -139,6 +140,38 @@ export async function changeMemberRole(membershipId: string, role: string): Prom
     }
   }
   await ctx.scope.updateMembership(parsed.data.membershipId, { role: parsed.data.role });
+  revalidatePath("/app/settings/employees");
+  return { ok: true };
+}
+
+/**
+ * Clear a member's TOTP enrollment + revoke their sessions so they can
+ * re-enroll (lost/replaced authenticator). Pair with "Forgot password?" for
+ * the full self-lockout recovery path.
+ */
+export async function resetMemberMfa(membershipId: string): Promise<ActionResult> {
+  const ctx = await requireStaff();
+  if (!z.string().uuid().safeParse(membershipId).success) return { error: "Invalid input" };
+
+  await authorize(
+    ctx.scope,
+    ctx.actor,
+    "employees.manage",
+    { orgId: ctx.orgId, type: "org_membership", id: membershipId },
+    { readOnlyOrg: ctx.readOnly, details: { op: "reset_mfa" } }
+  );
+
+  const target = await ctx.scope.getMembershipById(membershipId);
+  if (!target) return { error: "Member not found" };
+  if (target.userId === ctx.user.id) {
+    return { error: "You can't reset your own two-factor while signed in — ask another admin." };
+  }
+  if (target.role === "owner" && ctx.role !== "owner") {
+    return { error: "Only an owner can reset an owner's two-factor." };
+  }
+
+  await resetStaffTwoFactor(target.userId);
+  logger.info({ membershipId, orgId: ctx.orgId }, "member two-factor reset");
   revalidatePath("/app/settings/employees");
   return { ok: true };
 }

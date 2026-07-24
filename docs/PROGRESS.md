@@ -479,6 +479,37 @@ _Last updated: 2026-07-23 (M10 polish + deploy complete — ALL MILESTONES DONE;
   cause — when it recurs, read the dev-server console for "ai run failed".
   Note: the repro wrote one real ai_interaction row in Sandhu Tax's AI usage
   viewer (asker Satinder, "How does the pipeline look?").
+- **Post-M10 fixes round 2 (2026-07-23, customer-prioritized "fixes first,
+  then Stripe"):** four gaps closed —
+  1. **Forgot password + admin 2FA reset (ADR-0039):** /forgot-password +
+     /reset-password pages (better-auth requestPasswordReset; reset email
+     rides the org outbox → `pnpm outbox` in dev; sessions revoked on
+     reset), "Forgot password?" link on login, and Settings → Employees
+     "Reset 2FA" per member (employees.manage, audited, owner-guarded,
+     src/lib/staff-recovery.ts clears TOTP + sessions → forced re-enroll).
+     `pnpm reset:login` stays as the solo-owner last resort.
+  2. **Google-on-password-account explains instead of erroring (ADR-0038):**
+     login branches on the OAuth ?error code; `account_not_linked` gets
+     precise guidance. Implicit linking deliberately NOT enabled — better-
+     auth social sign-in skips the TOTP challenge (bypass documented in the
+     ADR; safer-option rule applied).
+  3. **Billing defaults card (Settings):** default hourly rate + tax
+     label/percent editable (org.update_settings, audited), stored as
+     ADR-0030 cents/bps via org.settings.billing. "No billing-settings UI"
+     limitation below is CLOSED.
+  4. **Household management:** /app/clients/households (linked from the
+     clients grid) — member lists, rename, merge-with-move, delete-empty.
+     Mutations authorize clients.update with no assignee (owner/admin, same
+     rule as bulk distribute); OrgScope methods + org-isolation tests.
+     "No household management page" limitation below is CLOSED.
+  Tests: 228 Vitest green (+ households.test.ts 6, recovery.test.ts 1);
+  typecheck + lint clean. **Not run:** production build and the e2e suite —
+  the customer's live dev server (org "Sandhu Tax") is running against this
+  checkout and shares .next/, and e2e requires a reseed that would wipe
+  their org. Run `pnpm build` + `pnpm test:e2e` after the next reseed.
+  **Flagging Satinder (manual, ~5 min):** forgot-password round trip in dev
+  (link via `pnpm outbox`), Reset 2FA on a test member, and the new
+  Google-error message wording.
 - **Specs written, NOT scheduled (2026-07-23):** docs/SPEC_STRIPE_PAYMENTS.md
   (M11 candidate — Stripe Connect Express, client invoice payment, cards +
   Canadian PAD) and docs/SPEC_SMART_INTAKE.md (M12 candidate — portal
@@ -543,15 +574,19 @@ _Last updated: 2026-07-23 (M10 polish + deploy complete — ALL MILESTONES DONE;
   schedule in production).
 - Google-only accounts still can't enroll TOTP (twoFactor.enable needs a
   password). Candidate fix in a later milestone: better-auth setPassword
-  path for OAuth-only accounts.
+  path for OAuth-only accounts. Related: Google sign-in on an existing
+  password account now explains instead of erroring, and implicit linking
+  is deliberately off — better-auth social sign-in skips the TOTP
+  challenge (ADR-0038).
 - Multi-org users still land in their first org (switcher deferred).
 - checkout.session.completed relies on client_reference_id; sessions created
   outside the app are ignored by design.
 - Clients grid filters/search run client-side on the org's full (scoped)
   list — fine at small-firm scale; move search server-side if a firm's list
   grows past a few thousand.
-- Households are created inline from the client form; there's no dedicated
-  household management page (rename/merge) yet.
+- ~~Households are created inline from the client form; there's no dedicated
+  household management page (rename/merge) yet~~ DONE (post-M10 fixes
+  round 2): /app/clients/households — rename, merge, delete-empty.
 - Portal rate limiter is in-memory per process (fine single-instance; moves
   to Postgres/Redis if we ever run multiple app instances). The OTP
   attempt cap is durable in portal_token either way.
@@ -576,10 +611,8 @@ _Last updated: 2026-07-23 (M10 polish + deploy complete — ALL MILESTONES DONE;
   cherry-picking) and there's no invoice-edit surface — void and re-record
   is the correction path. Deliberate basic scope (ADR-0030); extend when a
   customer asks.
-- **No billing-settings UI**: the org's default hourly rate / tax rate+label
-  are code-side defaults (org.settings.billing, billingSettings()); both are
-  editable per entry / applied per invoice. A Settings card is trivial to
-  add when Joey wants firm-specific defaults.
+- ~~**No billing-settings UI**~~ DONE (post-M10 fixes round 2): Settings →
+  Billing defaults card edits org.settings.billing (rate + tax label/bps).
 - **AFR matching covers the common slip families** (T4 group, T5 group, T3,
   T2202, RRSP, RC62); unknown slip types fall back to a literal token match
   and land as "untracked" at worst — never silently dropped.

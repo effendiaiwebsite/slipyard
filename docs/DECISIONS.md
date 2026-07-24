@@ -500,3 +500,62 @@ Decisions inside that:
 - The pdf.js worker is copied to /public/vendor on postinstall (same
   mechanism as jscanify/OpenCV, §6 no-CDN posture); the main library is
   Next-bundled. No CSP additions were needed.
+
+## ADR-0038 (2026-07-23) — Google sign-in does NOT implicitly link to password accounts
+Customer report: signing in with Google on an email that already has a
+password account errors instead of linking. Root cause of the "why not just
+link": better-auth 1.3's two-factor challenge hooks only
+`/sign-in/email|username|phone-number` — a social OAuth callback creates a
+FULL session with no TOTP prompt, and requireStaff checks enrollment
+(user.twoFactorEnabled), not per-session verification. Implicit linking
+would therefore let a Google sign-in bypass mandatory TOTP on any linked
+account. Per the conflict rule (CLAUDE.md), the safer option wins:
+- Implicit linking stays OFF (better-auth default behavior for unverified
+  local emails; we deliberately do not add trustedProviders /
+  requireLocalEmailVerified overrides).
+- The login page now branches on the machine-readable ?error= code
+  (errorCallbackURL is plain /login; redirectOnError appends the code):
+  `account_not_linked` gets a precise explanation pointing at password +
+  authenticator + the new forgot-password link; other codes keep the
+  generic invite-or-create message.
+Revisit only with a mechanism that challenges TOTP on OAuth sessions
+(better-auth upgrade or a custom callback hook), recorded as the acceptance
+bar for turning linking on.
+
+## ADR-0039 (2026-07-23) — Self-serve password reset + admin-driven 2FA reset
+The lockout story (customer hit it live) is now: (1) "Forgot password?" —
+better-auth requestPasswordReset/resetPassword with sendResetPassword
+delivering through the org outbox (dev: link surfaces via `pnpm outbox`;
+pre-org accounts fall back to direct SES/console since no org outbox
+exists), revokeSessionsOnPasswordReset on; (2) lost authenticator —
+Settings → Employees "Reset 2FA" (employees.manage, audited op reset_mfa):
+clears auth_two_factor + the user flag and revokes sessions via
+src/lib/staff-recovery.ts, forcing clean re-enrollment at next sign-in.
+Guards: never your own account, owner targets only by an owner (mirrors
+changeMemberRole). staff-recovery uses the raw db handle DELIBERATELY —
+auth tables are global/non-org-scoped by design (ARCHITECTURE.md), so the
+OrgScope iron rule doesn't apply; callers must authorize + verify org
+membership first. The dev script (pnpm reset:login) remains the last-resort
+path for a locked-out solo owner. Self-serve MFA reset via email link was
+REJECTED: it would reduce two-factor to email possession.
+
+## ADR-0040 (2026-07-24) — Bulk client distribution: workload-aware, household-preserving, owner/admin only
+The clients list gets a multi-select bulk action that shares a chosen set of
+clients across chosen accountants. Split rule (planDistribution, src/lib/
+distribution.ts — pure, no DB): collapse the selection into indivisible units
+(one per household, one per household-less client), then greedily place the
+largest unit onto the accountant with the smallest PROJECTED book, where
+"projected" seeds from each accountant's EXISTING load — so the tool levels
+whole books, not just the batch (Longest-Processing-Time scheduling).
+Deterministic (id tie-breaks) so the preview matches the commit and tests are
+stable. Households are kept together (a family / related entities shouldn't be
+split across preparers), accepting slightly less exact client-count parity.
+Baseline load EXCLUDES the clients being redistributed so they aren't double
+-counted. AuthZ: no new matrix action — it authorizes clients.update with NO
+specific assignee, which the accountant 'assigned' rule can't satisfy, so it
+is owner/admin only (same manager tier as import.manage); audited as
+op:distribute. The write is bulkAssignClients (one org-scoped transaction).
+REJECTED alternatives: plain even split of only the selection (ignores
+standing imbalance); a dedicated permission action (redundant with the
+no-assignee clients.update check); reassigning UNSELECTED household members to
+follow their household (surprising — only touch what was selected).

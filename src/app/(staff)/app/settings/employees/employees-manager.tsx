@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { changeMemberRole, inviteEmployee, revokeInvitation, setMemberStatus } from "./actions";
+import {
+  changeMemberRole,
+  inviteEmployee,
+  resetMemberMfa,
+  revokeInvitation,
+  setMemberStatus,
+} from "./actions";
 
 type Member = {
   membershipId: string;
@@ -112,21 +118,39 @@ export function EmployeesManager({
                   {canManage && (
                     <td className="py-2.5">
                       {!m.isSelf && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={disabled}
-                          onClick={() =>
-                            run(() =>
-                              setMemberStatus(
-                                m.membershipId,
-                                m.status === "active" ? "deactivated" : "active"
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={disabled}
+                            onClick={() =>
+                              run(() =>
+                                setMemberStatus(
+                                  m.membershipId,
+                                  m.status === "active" ? "deactivated" : "active"
+                                )
                               )
-                            )
-                          }
-                        >
-                          {m.status === "active" ? "Deactivate" : "Reactivate"}
-                        </Button>
+                            }
+                          >
+                            {m.status === "active" ? "Deactivate" : "Reactivate"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={disabled || (m.role === "owner" && !isOwner)}
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Reset two-factor for ${m.name}? They'll be signed out everywhere and will re-enroll an authenticator at next sign-in.`
+                                )
+                              ) {
+                                run(() => resetMemberMfa(m.membershipId));
+                              }
+                            }}
+                          >
+                            Reset 2FA
+                          </Button>
+                        </>
                       )}
                     </td>
                   )}

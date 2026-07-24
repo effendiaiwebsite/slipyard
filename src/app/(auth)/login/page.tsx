@@ -19,10 +19,13 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
 
   const idleNotice = params.get("reason") === "idle";
-  // OAuth failures bounce back here (errorCallbackURL) instead of the raw
-  // better-auth error page — the usual cause is a Google account that has no
-  // SlipYard account yet.
-  const oauthNotice = params.get("error") !== null;
+  // OAuth failures bounce back here (errorCallbackURL) with a machine-readable
+  // ?error= code appended by better-auth's redirectOnError.
+  const oauthError = params.get("error");
+  // Deliberate posture (ADR-0038): we do NOT implicitly link Google to an
+  // existing password account — better-auth's social sign-in skips the TOTP
+  // challenge, so auto-linking would quietly bypass mandatory 2FA.
+  const accountNotLinked = oauthError === "account_not_linked";
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -45,7 +48,7 @@ function LoginForm() {
     await authClient.signIn.social({
       provider: "google",
       callbackURL: "/app",
-      errorCallbackURL: "/login?error=oauth",
+      errorCallbackURL: "/login",
     });
   }
 
@@ -61,7 +64,14 @@ function LoginForm() {
             You were signed out after 30 minutes of inactivity.
           </p>
         )}
-        {oauthNotice && (
+        {accountNotLinked && (
+          <p className="text-sm rounded-md bg-amber-50 text-amber-800 ring-1 ring-amber-200 px-3 py-2">
+            That email already signs in with a password. Enter your email and password below
+            (plus your authenticator code) — for security, Google sign-in doesn&apos;t attach
+            itself to an existing account. Forgot the password? Use the reset link below.
+          </p>
+        )}
+        {oauthError && !accountNotLinked && (
           <p className="text-sm rounded-md bg-amber-50 text-amber-800 ring-1 ring-amber-200 px-3 py-2">
             We couldn&apos;t finish signing you in with Google. If you don&apos;t have an account
             yet, ask your firm owner for an invitation — or create a new firm below. If you do,
@@ -81,7 +91,15 @@ function LoginForm() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <Link
+                href="/forgot-password"
+                className="text-xs text-slate-500 underline underline-offset-2"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <Input
               id="password"
               type="password"

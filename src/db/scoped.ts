@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, isNull, lte, max, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, lte, max, ne, notInArray, sql } from "drizzle-orm";
 import { db, schema } from ".";
 import { DEFAULT_ENGAGEMENT_STAGES, type StageCategory } from "./schema";
 import { DEFAULT_MESSAGE_TEMPLATES } from "@/lib/templates";
@@ -679,6 +679,78 @@ export class OrgScope {
     });
   }
 
+  // ---- bulk distribution (ADR-0040) ------------------------------------------
+
+  /** Active, in-org clients among `clientIds`, with just the fields the
+   *  distribution planner needs (id + household). Foreign/archived ids drop. */
+  async clientsForDistribution(clientIds: string[]) {
+    if (clientIds.length === 0) return [];
+    return this.tx((tx) =>
+      tx
+        .select({ id: schema.client.id, householdId: schema.client.householdId })
+        .from(schema.client)
+        .where(
+          and(
+            eq(schema.client.orgId, this.orgId),
+            eq(schema.client.status, "active"),
+            inArray(schema.client.id, clientIds)
+          )
+        )
+    );
+  }
+
+  /**
+   * Active-client count per accountant, optionally EXCLUDING a set of client
+   * ids (the ones about to be redistributed — excluded so they don't inflate
+   * the workload baseline). Returns accountant id → count.
+   */
+  async clientLoadByAccountant(excludeClientIds: string[] = []): Promise<Record<string, number>> {
+    return this.tx(async (tx) => {
+      const conds = [
+        eq(schema.client.orgId, this.orgId),
+        eq(schema.client.status, "active"),
+        sql`${schema.client.assignedAccountantId} is not null`,
+      ];
+      if (excludeClientIds.length > 0) {
+        conds.push(notInArray(schema.client.id, excludeClientIds));
+      }
+      const rows = await tx
+        .select({
+          accountantId: schema.client.assignedAccountantId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(schema.client)
+        .where(and(...conds))
+        .groupBy(schema.client.assignedAccountantId);
+      const map: Record<string, number> = {};
+      for (const r of rows) if (r.accountantId) map[r.accountantId] = r.count;
+      return map;
+    });
+  }
+
+  /**
+   * Apply a distribution plan: set assigned_accountant_id for many clients in
+   * ONE transaction (all-or-nothing), each row org-scoped. Returns the number
+   * of rows actually updated (foreign ids simply match nothing).
+   */
+  async bulkAssignClients(
+    assignments: { clientId: string; accountantId: string }[]
+  ): Promise<number> {
+    if (assignments.length === 0) return 0;
+    return this.tx(async (tx) => {
+      let updated = 0;
+      for (const a of assignments) {
+        const rows = await tx
+          .update(schema.client)
+          .set({ assignedAccountantId: a.accountantId, updatedAt: new Date() })
+          .where(and(eq(schema.client.orgId, this.orgId), eq(schema.client.id, a.clientId)))
+          .returning({ id: schema.client.id });
+        updated += rows.length;
+      }
+      return updated;
+    });
+  }
+
   // ---- households ------------------------------------------------------------
 
   async listHouseholds() {
@@ -698,6 +770,91 @@ export class OrgScope {
         .values({ orgId: this.orgId, name })
         .returning();
       return rows[0];
+    });
+  }
+
+  /** Household management page: every household with its member names. */
+  async listHouseholdsWithMembers() {
+    return this.tx(async (tx) => {
+      const households = await tx
+        .select()
+        .from(schema.household)
+        .where(eq(schema.household.orgId, this.orgId))
+        .orderBy(asc(schema.household.name));
+      const members = await tx
+        .select({
+          id: schema.client.id,
+          displayName: schema.client.displayName,
+          householdId: schema.client.householdId,
+          status: schema.client.status,
+        })
+        .from(schema.client)
+        .where(eq(schema.client.orgId, this.orgId));
+      return households.map((h) => ({
+        ...h,
+        members: members.filter((m) => m.householdId === h.id),
+      }));
+    });
+  }
+
+  async renameHousehold(householdId: string, name: string) {
+    return this.tx(async (tx) => {
+      const rows = await tx
+        .update(schema.household)
+        .set({ name })
+        .where(and(eq(schema.household.orgId, this.orgId), eq(schema.household.id, householdId)))
+        .returning();
+      return rows[0] ?? null;
+    });
+  }
+
+  /**
+   * Merge: move every member of `sourceId` into `targetId`, then delete the
+   * (now empty) source. Both must belong to this org; returns the moved count
+   * or null when either household is missing.
+   */
+  async mergeHouseholds(sourceId: string, targetId: string) {
+    if (sourceId === targetId) return null;
+    return this.tx(async (tx) => {
+      const pair = await tx
+        .select({ id: schema.household.id })
+        .from(schema.household)
+        .where(
+          and(
+            eq(schema.household.orgId, this.orgId),
+            inArray(schema.household.id, [sourceId, targetId])
+          )
+        );
+      if (pair.length !== 2) return null;
+      const moved = await tx
+        .update(schema.client)
+        .set({ householdId: targetId, updatedAt: new Date() })
+        .where(and(eq(schema.client.orgId, this.orgId), eq(schema.client.householdId, sourceId)))
+        .returning({ id: schema.client.id });
+      await tx
+        .delete(schema.household)
+        .where(and(eq(schema.household.orgId, this.orgId), eq(schema.household.id, sourceId)));
+      return { movedCount: moved.length };
+    });
+  }
+
+  /** Delete a household only when no client references it. */
+  async deleteEmptyHousehold(householdId: string) {
+    return this.tx(async (tx) => {
+      const members = await tx
+        .select({ id: schema.client.id })
+        .from(schema.client)
+        .where(
+          and(eq(schema.client.orgId, this.orgId), eq(schema.client.householdId, householdId))
+        );
+      if (members.length > 0) return { ok: false as const, reason: "not_empty" as const };
+      const rows = await tx
+        .delete(schema.household)
+        .where(and(eq(schema.household.orgId, this.orgId), eq(schema.household.id, householdId)))
+        .returning();
+      return rows.length > 0
+        ? { ok: true as const }
+        : { ok: false as const, reason: "not_found" as const };
     });
   }
 

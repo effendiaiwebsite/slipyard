@@ -37,6 +37,41 @@ export async function updateOrgProfile(_prev: ActionResult | null, formData: For
   return { ok: true };
 }
 
+// Money enters as human units (dollars / percent) and is stored in the
+// ADR-0030 integer forms (cents / basis points).
+const billingDefaultsSchema = z.object({
+  hourly_rate: z.coerce.number().min(0).max(10_000),
+  tax_percent: z.coerce.number().min(0).max(30),
+  tax_label: z.string().trim().min(1).max(40),
+});
+
+export async function updateBillingDefaults(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
+  const ctx = await requireStaff();
+  const parsed = billingDefaultsSchema.safeParse({
+    hourly_rate: formData.get("hourly_rate"),
+    tax_percent: formData.get("tax_percent"),
+    tax_label: formData.get("tax_label"),
+  });
+  if (!parsed.success) return { error: "Invalid input — rate up to $10,000/h, tax up to 30%." };
+
+  const billing = {
+    hourly_rate_cents: Math.round(parsed.data.hourly_rate * 100),
+    tax_rate_bps: Math.round(parsed.data.tax_percent * 100),
+    tax_label: parsed.data.tax_label,
+  };
+  await authorize(ctx.scope, ctx.actor, "org.update_settings", { orgId: ctx.orgId, type: "org", id: ctx.orgId }, {
+    readOnlyOrg: ctx.readOnly,
+    details: { op: "billing_defaults", ...billing },
+  });
+  await ctx.scope.updateOrgSettings({ billing });
+  revalidatePath("/app/settings");
+  revalidatePath("/app/billing");
+  return { ok: true };
+}
+
 const settingsSchema = z.object({
   ai_enabled: z.boolean(),
   accountant_scope_mode: z.enum(["all_read", "assigned_only"]),

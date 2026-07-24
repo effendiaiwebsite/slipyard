@@ -2,13 +2,15 @@ import Link from "next/link";
 import { requireStaff } from "@/lib/context";
 import { can } from "@/lib/permissions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { OrgProfileForm, OrgSettingsForm } from "./settings-forms";
+import { billingSettings } from "@/db/schema";
+import { BillingDefaultsForm, OrgProfileForm, OrgSettingsForm } from "./settings-forms";
 
 export const metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
   const ctx = await requireStaff();
   const canEdit = can(ctx.actor, "org.update_settings") && !ctx.readOnly;
+  const billing = billingSettings(ctx.orgSettings);
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
@@ -110,8 +112,25 @@ export default async function SettingsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-sm font-medium">Billing defaults</CardTitle>
+          <CardDescription>
+            Prefills for time entries and invoices — editable per entry either way.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <BillingDefaultsForm
+            hourlyRateCents={billing.hourly_rate_cents}
+            taxRateBps={billing.tax_rate_bps}
+            taxLabel={billing.tax_label}
+            disabled={!canEdit}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-sm font-medium">Coming later</CardTitle>
-          <CardDescription>Checklist templates · Firm-wide billing defaults</CardDescription>
+          <CardDescription>Checklist templates</CardDescription>
         </CardHeader>
       </Card>
     </div>
