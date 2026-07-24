@@ -1,0 +1,13 @@
+# SlipYard reverse proxy — installed to /etc/caddy/Caddyfile by setup-server.sh.
+# Caddy obtains + renews HTTPS certificates automatically (Let's Encrypt).
+#
+# IMPORTANT: for Caddy's certificate challenge to work, the slipyard.ca A record
+# in Cloudflare must be "DNS only" (grey cloud), pointing at this instance's
+# static IP. If you want Cloudflare's proxy (orange cloud) later, switch to a
+# Cloudflare Origin Certificate on the server and set Cloudflare SSL to "Full
+# (strict)" instead.
+
+slipyard.ca, www.slipyard.ca {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000
+}

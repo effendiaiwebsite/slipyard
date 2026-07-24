@@ -1,0 +1,6 @@
+# Deploy scripts and server config MUST use LF — they run on Linux and break
+# with CRLF (bash: "\r: command not found"; systemd/Caddy parse errors).
+*.sh            text eol=lf
+deploy/Caddyfile        text eol=lf
+deploy/*.service        text eol=lf
+deploy/*.env.example    text eol=lf

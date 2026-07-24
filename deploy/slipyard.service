@@ -1,0 +1,27 @@
+# SlipYard app — systemd unit. Installed to /etc/systemd/system/slipyard.service
+# by setup-server.sh. Runs `next start` as the unprivileged slipyard user, with
+# secrets loaded from /etc/slipyard/slipyard.env. pg-boss background jobs run
+# in-process (instrumentation.ts), so this single service is the whole runtime.
+[Unit]
+Description=SlipYard practice CRM
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=slipyard
+Group=slipyard
+WorkingDirectory=/opt/slipyard
+EnvironmentFile=/etc/slipyard/slipyard.env
+Environment=PATH=/usr/bin:/usr/local/bin
+ExecStart=/opt/slipyard/node_modules/.bin/next start -p 3000
+Restart=always
+RestartSec=5
+TimeoutStartSec=90
+# Basic hardening
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

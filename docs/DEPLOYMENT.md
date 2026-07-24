@@ -5,6 +5,79 @@ and reusable for any single-instance install. The app is one Next.js server +
 Postgres + S3 + ClamAV; pg-boss runs inside the Next process
 (instrumentation.ts) — no separate worker to deploy._
 
+---
+
+## CHOSEN STACK — all-AWS in ca-central-1 (post-M10 decision)
+
+Everything Canadian: compute + database + files + encryption + email all in
+**ca-central-1 (Montreal)**, satisfying the "data stored in Canada" promise
+for a product holding SINs and tax data. The `deploy/` directory automates the
+server side; the AWS-console provisioning is below. (The generic §0–8 further
+down remains valid as background; this section is the concrete path.)
+
+**Architecture**
+- **Compute**: one **Lightsail** instance (Ubuntu, ca-central-1) running the
+  Next.js app (systemd) + **ClamAV** co-located + **Caddy** for auto-HTTPS.
+- **Database**: **RDS Postgres** (ca-central-1). Its automated backups + PITR
+  are the DB backup story — `pnpm backup` becomes optional belt-and-suspenders.
+- **Storage/crypto/email**: existing **S3 + KMS + SES**, already ca-central-1.
+- Tenant isolation needs **no separate DB role** here: FORCE row-level security
+  + the per-request `app.org_id` GUC enforce it regardless of the connecting
+  role, so the app uses the RDS master user directly (see `slipyard.env.example`).
+
+**The `deploy/` kit**
+- `deploy/setup-server.sh` — one-shot server bootstrap (Node 22, pnpm, ClamAV
+  on 127.0.0.1:3310, Caddy, app clone, systemd unit, env skeleton, 2 GB swap).
+- `deploy/deploy.sh` — pull → install → build → migrate → restart (every deploy).
+- `deploy/slipyard.service` — systemd unit (runs `next start` as user `slipyard`).
+- `deploy/Caddyfile` — reverse proxy + automatic HTTPS.
+- `deploy/slipyard.env.example` — production env template → `/etc/slipyard/slipyard.env`.
+
+### Step-by-step
+
+1. **RDS Postgres** (ca-central-1): create a PostgreSQL 16 instance
+   (`db.t4g.micro` is fine to start), database name `slipyard`, in your
+   default VPC, **not publicly accessible**. Note the endpoint + master
+   user/password → they become `DATABASE_URL` / `DATABASE_ADMIN_URL`. Keep
+   automated backups on (7–35 days).
+2. **Lightsail instance** (ca-central-1): Ubuntu 22.04/24.04, at least the
+   **4 GB plan** (Next's build + ClamAV's in-memory virus DB need the room;
+   the 2 GB plan works only with the swap the script adds). Attach a **static
+   IP**. In the Lightsail firewall, allow **22, 80, 443** only.
+3. **Networking Lightsail → RDS**: enable **Lightsail VPC peering** (Lightsail
+   → Account → Advanced → "VPC peering" for ca-central-1), then edit the RDS
+   security group to allow inbound **5432 from the Lightsail private IP range**.
+   (Alternative: make RDS public and restrict its SG to the Lightsail static
+   IP — simpler, slightly less private.)
+4. **Bootstrap the server** (SSH in as `ubuntu`):
+   ```bash
+   sudo bash <(curl -fsSL https://raw.githubusercontent.com/effendiaiwebsite/slipyard/main/deploy/setup-server.sh)
+   ```
+   (If the repo is private, `git clone` it to `/opt/slipyard` first, then
+   `sudo bash /opt/slipyard/deploy/setup-server.sh`.)
+5. **Fill in secrets**: `sudo nano /etc/slipyard/slipyard.env` — RDS URL, the
+   existing AWS keys + `S3_BUCKET` + `KMS_KEY_ID`, `SES_FROM_ADDRESS`
+   (`notifications@slipyard.ca`), **live** Stripe keys, Twilio, fresh
+   `AUTH_SECRET` + `FIELD_ENCRYPTION_KEY` (`openssl rand -base64 32`). Back up
+   `FIELD_ENCRYPTION_KEY` — losing it makes every stored SIN unreadable.
+6. **First deploy** (runs migrations against RDS, does NOT seed):
+   ```bash
+   sudo -u slipyard bash /opt/slipyard/deploy/deploy.sh
+   ```
+7. **DNS**: in Cloudflare, point `slipyard.ca` + `www` **A records** at the
+   Lightsail static IP, **DNS-only (grey cloud)** so Caddy can issue TLS. Within
+   a minute or two `https://slipyard.ca` is live.
+8. **Webhooks + residency finish**: set the Stripe live webhook and the Twilio
+   messaging webhook to `https://slipyard.ca/api/webhooks/...`; request **SES
+   production access** if not already granted. Consider moving S3 to a
+   dedicated production bucket (dev is `accountant-crm-dev`).
+
+### Redeploys after this
+Push to GitHub, then on the server: `sudo -u slipyard bash /opt/slipyard/deploy/deploy.sh`.
+(Or add a GitHub Action later to run that over SSH on push to `main`.)
+
+---
+
 ## 0. Shape of a production install
 
 - **App**: one Node host (or container) running `pnpm build` output via
