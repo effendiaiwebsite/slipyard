@@ -559,3 +559,29 @@ REJECTED alternatives: plain even split of only the selection (ignores
 standing imbalance); a dedicated permission action (redundant with the
 no-assignee clients.update check); reassigning UNSELECTED household members to
 follow their household (surprising — only touch what was selected).
+
+## ADR-0041 (2026-07-27) — Google-only accounts create a password during MFA setup
+Google sign-up/sign-in was a dead end: better-auth auto-creates the account on
+first Google OAuth (default implicit sign-up, kept), requireStaff then demands
+TOTP enrollment, but twoFactor.enable verifies a PASSWORD — which a
+Google-only account doesn't have. The old /setup-mfa caption promised a
+password-based flow "in M1" that never landed; Google users were stuck.
+Resolution: /setup-mfa is now a server shell that checks for a credential
+account (raw db on global auth tables, ADR-0039 precedent); when absent, the
+first step becomes "Create a password" — a server action calls better-auth's
+auth.api.setPassword (session-bound, idempotent: an existing credential is
+treated as already-done and left for enable to verify) — then TOTP enrollment
+proceeds identically. Result: every account, Google or not, ends up with
+password + mandatory TOTP; Google remains a convenience sign-in on top. The
+signup page gains the same "Continue with Google" button as login
+(errorCallbackURL /login so account_not_linked reuses the ADR-0038
+explanation). REJECTED: exempting Google accounts from app-level TOTP
+(relying on Google's own 2FA) — contradicts the mandatory-TOTP iron rule and
+forks the security posture per provider. KNOWN RESIDUAL (unchanged from
+ADR-0038): an OAuth session itself is never TOTP-challenged per-session —
+enrollment is enforced, the challenge only guards password sign-ins; the
+acceptance bar for fixing that remains a mechanism that challenges TOTP on
+OAuth callbacks. NOTE: production still has Google OAuth disabled (blank
+creds) — enabling requires a Google Cloud OAuth client with redirect URI
+https://slipyard.ca/api/auth/callback/google and GOOGLE_CLIENT_ID/SECRET in
+/etc/slipyard/slipyard.env.

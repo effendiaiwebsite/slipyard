@@ -8,11 +8,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
+import { GoogleMark } from "@/components/google-mark";
 
 /**
- * M0 stub: creates the staff account and routes into MFA setup. Org creation
- * + Stripe trial arrive in M1 — until then a fresh account lands on
- * /no-organization after MFA enrollment.
+ * Creates the staff account (email+password or Google) and routes into
+ * mandatory MFA setup; a fresh account then lands on /no-organization to
+ * create its firm + trial. Google accounts create their password during MFA
+ * setup (ADR-0041); a Google email that already owns a password account
+ * bounces to /login with the account_not_linked explanation (ADR-0038).
  */
 export default function SignupPage() {
   const router = useRouter();
@@ -35,6 +38,17 @@ export default function SignupPage() {
     router.push("/setup-mfa");
   }
 
+  async function googleSignUp() {
+    // better-auth auto-creates the account on first Google sign-in; an email
+    // that already owns a password account bounces to /login?error=
+    // account_not_linked, where the message explains what happened (ADR-0038).
+    await authClient.signIn.social({
+      provider: "google",
+      callbackURL: "/app",
+      errorCallbackURL: "/login",
+    });
+  }
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6">
       {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
@@ -43,7 +57,7 @@ export default function SignupPage() {
         <CardHeader>
           <CardTitle className="text-lg">Create your account</CardTitle>
           <CardDescription>
-            Firm setup and subscription arrive in the next milestone (M1).
+            You&apos;ll set up two-factor security, then your firm and free trial.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -80,6 +94,9 @@ export default function SignupPage() {
               {busy ? "Creating…" : "Create account"}
             </Button>
           </form>
+          <Button variant="outline" className="w-full" onClick={googleSignUp}>
+            <GoogleMark /> Continue with Google
+          </Button>
           <p className="text-sm text-slate-500 text-center">
             Already have an account?{" "}
             <Link href="/login" className="underline underline-offset-2">
