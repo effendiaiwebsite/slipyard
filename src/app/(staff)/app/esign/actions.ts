@@ -12,6 +12,7 @@ import {
   signatureMarkSchema,
 } from "@/lib/esign";
 import { authorize, PermissionError, ReadOnlyOrgError } from "@/lib/permissions";
+import { phonePreprocess } from "@/lib/phone";
 import { presignDownloadUrl, presignInlineUrl } from "@/lib/storage";
 import type { schema } from "@/db";
 
@@ -142,7 +143,17 @@ const updateDraftSchema = z.object({
   mode: z.enum(["remote", "in_person"]),
   signerName: z.string().trim().min(1).max(200),
   signerEmail: z.string().trim().email().max(200).optional().or(z.literal("")),
-  signerPhone: z.string().trim().max(40).optional().or(z.literal("")),
+  // Any common format accepted, normalised to E.164 (lib/phone.ts) — this is
+  // the number the portal OTP will be texted to (ADR-0042), so it must be real.
+  signerPhone: z.preprocess(
+    phonePreprocess,
+    z
+      .string()
+      .trim()
+      .regex(/^\+1\d{10}$/, "That doesn't look like a Canadian phone number — 10 digits, any format.")
+      .or(z.literal(""))
+      .optional()
+  ),
   engagementId: z.string().uuid().nullable().optional(),
   placements: z.array(placementSchema).max(50),
 });

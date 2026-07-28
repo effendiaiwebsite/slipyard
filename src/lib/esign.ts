@@ -3,8 +3,9 @@ import { z } from "zod";
 import type { OrgScope } from "@/db/scoped";
 import type { schema } from "@/db";
 import { STAGE_CATEGORIES } from "@/db/schema";
-import { sendClientMessage, type ClientRecipient } from "@/lib/client-messaging";
 import { logger } from "@/lib/logger";
+import { sendEmail, sendSms } from "@/lib/messaging";
+import { mintPortalLink } from "@/lib/portal-tokens";
 import {
   formatCraTimestamp,
   hashBytes,
@@ -33,18 +34,6 @@ type SignatureRequestRow = typeof schema.signatureRequest.$inferSelect;
 type ClientRow = typeof schema.client.$inferSelect;
 
 const AWAITING_SIGNATURE_INDEX = STAGE_CATEGORIES.indexOf("awaiting_signature");
-
-/** Client row → the recipient shape the messaging layer consumes. */
-export function toRecipient(c: ClientRow): ClientRecipient {
-  return {
-    id: c.id,
-    displayName: c.displayName,
-    email: c.email,
-    phone: c.phone,
-    preferredChannel: c.preferredChannel,
-    smsOptOutAt: c.smsOptOutAt,
-  };
-}
 
 /**
  * Move a linked engagement FORWARD to the first awaiting_signature-category
@@ -118,22 +107,15 @@ export async function sendSignatureRequest(
     details: { mode: request.mode, title: request.title },
   });
 
-  // Notify the signer through the M5 client-messaging layer (remote only —
-  // in-person requests are signed on the spot, no message needed).
+  // Notify the signer (remote only — in-person requests are signed on the
+  // spot, no message needed). ADR-0042: the request's signerEmail/signerPhone
+  // override the client's saved contact info, BOTH channels are used when
+  // available, and — when the signer has a phone for the SMS OTP — a fresh
+  // portal link rides along in each message so the signer never has to dig
+  // up an old one. The raw link goes only into outbox sends (ADR-0003).
   if (request.mode === "remote") {
     try {
-      await sendClientMessage(scope, {
-        client: toRecipient(client),
-        engagementId: request.engagementId,
-        kind: "manual",
-        requestedChannel: "preferred",
-        subject: `A form is ready for your signature`,
-        body:
-          `Hello ${client.displayName}, your accountant has prepared "${request.title}" for ` +
-          `you to review and sign. Open your secure portal link to sign it. If you don't have ` +
-          `your link handy, call the office and we'll send a new one.`,
-        contactSummary: `Sent signature request "${request.title}"`,
-      });
+      await notifySigner(scope, request, client);
     } catch (e) {
       logger.warn(
         { requestId: request.id, err: e instanceof Error ? e.message : String(e) },
@@ -147,6 +129,81 @@ export async function sendSignatureRequest(
   }
 
   return updated;
+}
+
+/**
+ * Signer notification for a remote send (ADR-0042). Contact resolution: the
+ * request's signerEmail/signerPhone (typed on the send page) win over the
+ * client's saved values. With a phone we mint a fresh OTP-gated portal link
+ * and put it in BOTH an SMS and an email (whichever addresses exist; SMS
+ * respects the opt-out — the portal-open OTP is a verification code and is
+ * not affected). Without a phone the portal's SMS OTP can't reach the signer,
+ * so the email falls back to the "use your existing link / call us" copy.
+ * One contact-log line records the channels used; the raw link appears only
+ * in outbox sends, never in the log (ADR-0003).
+ */
+async function notifySigner(
+  scope: OrgScope,
+  request: SignatureRequestRow,
+  client: ClientRow
+): Promise<void> {
+  const org = await scope.getOrg();
+  const firmName = org?.name ?? "Your accountant";
+  const email = request.signerEmail ?? client.email;
+  const phone = request.signerPhone ?? client.phone;
+  const smsOk = !!phone && !client.smsOptOutAt;
+
+  let url: string | null = null;
+  if (phone && scope.userId) {
+    const minted = await mintPortalLink(scope, {
+      clientId: client.id,
+      recipientName: request.signerName,
+      recipientPhone: phone,
+      createdBy: scope.userId,
+    });
+    url = minted.url;
+  }
+
+  const sentVia: string[] = [];
+
+  if (smsOk && url) {
+    await sendSms(scope, {
+      to: phone!,
+      body:
+        `${firmName}: "${request.title}" is ready for your signature. Open your secure link ` +
+        `to review and sign: ${url} — it works for 7 days and is personal to you. We'll text ` +
+        `a security code when you open it.`,
+      meta: { kind: "esign_request", requestId: request.id, clientId: client.id },
+    });
+    sentVia.push("SMS");
+  }
+
+  if (email) {
+    const body = url
+      ? `Hello ${request.signerName},\n\n${firmName} has prepared "${request.title}" for you ` +
+        `to review and sign electronically.\n\nOpen your secure portal to sign it:\n\n${url}\n\n` +
+        `The link works for 7 days and is personal to you. When you open it, we'll text a ` +
+        `6-digit security code to your phone ending in ${phone!.slice(-4)}.\n\n` +
+        `If you weren't expecting this, please call the office.`
+      : `Hello ${request.signerName},\n\n${firmName} has prepared "${request.title}" for you ` +
+        `to review and sign. Open your secure portal link to sign it. If you don't have your ` +
+        `link handy, call the office and we'll send a new one.`;
+    await sendEmail(scope, {
+      to: email,
+      subject: `${firmName} — "${request.title}" is ready for your signature`,
+      body,
+      meta: { kind: "esign_request", requestId: request.id, clientId: client.id },
+    });
+    sentVia.push("email");
+  }
+
+  if (sentVia.length > 0) {
+    await scope.addContactLog({
+      clientId: client.id,
+      channel: sentVia.includes("SMS") ? "sms" : "email",
+      summary: `Sent signature request "${request.title}" by ${sentVia.join(" and ")}`,
+    });
+  }
 }
 
 export type ExecuteInput = {

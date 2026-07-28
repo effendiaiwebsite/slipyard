@@ -585,3 +585,28 @@ OAuth callbacks. NOTE: production still has Google OAuth disabled (blank
 creds) — enabling requires a Google Cloud OAuth client with redirect URI
 https://slipyard.ca/api/auth/callback/google and GOOGLE_CLIENT_ID/SECRET in
 /etc/slipyard/slipyard.env.
+
+## ADR-0042 (2026-07-28) — E-sign notification: overrides win, both channels, link included
+Customer-reported (Satinder, in production): the signer email typed on the
+e-sign send page was saved but IGNORED — sendSignatureRequest notified via
+the client's saved contact through sendClientMessage(requestedChannel:
+'preferred'), which also picks only ONE channel; and the message body
+contained no link at all ("use your portal link... call the office"), which
+reads as a dead end when the earlier portal link is gone or was never sent.
+New behavior (notifySigner, src/lib/esign.ts): (1) request.signerEmail/
+signerPhone override the client's saved values — the send page's fields now
+mean what they say; (2) when the signer has a phone, a FRESH portal link is
+minted at send time (mintPortalLink, scopes view/upload/sign, OTP to that
+phone) and embedded in BOTH an SMS and an email, whichever addresses exist —
+mirroring issuePortalLink's belt-and-braces posture and ADR-0003 (raw link
+only ever in outbox sends; the contact-log line names the channels, never
+the link); (3) SMS respects sms_opt_out_at (the portal-open OTP is a
+verification code and is unaffected); (4) no phone anywhere → the portal's
+SMS OTP is unreachable, so the email falls back to the old link-less copy.
+signerPhone on the draft now runs phonePreprocess → E.164 (the 3b79640
+"forgiving phone everywhere" sweep had missed it) since the OTP is texted
+there. Notification rows moved from the message log (sendClientMessage) to
+raw outbox sends — deliberate: message rows are staff-visible in Messaging
+and would have exposed raw links (ADR-0003); the contact timeline entry is
+kept. toRecipient() removed (dead). Notification failures still never block
+the send (ADR-0022).

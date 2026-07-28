@@ -306,6 +306,73 @@ describe("executeSignatureRequest", () => {
   });
 });
 
+describe("signer notification (ADR-0042)", () => {
+  it("sends BOTH SMS and email to the request's override contacts, each carrying a fresh portal link", async () => {
+    const request = await scopeA.createSignatureRequest({
+      clientId: clientA,
+      documentId: docA,
+      engagementId: null,
+      title: "T183 authorization",
+      mode: "remote",
+      signerName: "Ruth Okafor",
+      // Overrides differ from the client's saved email (ruth@example.test) and
+      // saved phone (none) — the notification must honour THESE (ADR-0042).
+      signerEmail: "override@example.test",
+      signerPhone: "+14165550142",
+      placements: [
+        { id: "s1", page: 0, xPct: 0.1, yPct: 0.8, wPct: 0.3, hPct: 0.06, kind: "signature" },
+      ],
+      createdBy: f.userA,
+    });
+    const client = await scopeA.getClient(clientA);
+
+    await sendSignatureRequest(scopeA, request, client!);
+
+    const outbox = await scopeA.listOutbox();
+    const sms = outbox.find(
+      (o) => o.channel === "sms" && o.toAddress === "+14165550142" && o.body.includes("T183")
+    );
+    const email = outbox.find(
+      (o) => o.channel === "email" && o.toAddress === "override@example.test"
+    );
+    expect(sms, "SMS to the override phone").toBeTruthy();
+    expect(email, "email to the override address").toBeTruthy();
+    expect(sms!.body).toContain("/portal/");
+    expect(email!.body).toContain("/portal/");
+
+    // The embedded link is a real, valid portal token for this client with
+    // the sign scope — validate it end-to-end (same path the signer takes).
+    const raw = sms!.body.match(/\/portal\/([A-Za-z0-9_.-]+)/)?.[1];
+    expect(raw).toBeTruthy();
+    const { validatePortalLink } = await import("@/lib/portal-tokens");
+    const validated = await validatePortalLink(raw!);
+    expect(validated.ok).toBe(true);
+    if (validated.ok) {
+      expect(validated.value.token.clientId).toBe(clientA);
+      expect(validated.value.token.recipientPhone).toBe("+14165550142");
+      expect(validated.value.token.scopes).toContain("sign");
+    }
+  });
+
+  it("falls back to a link-less email when the signer has no phone (no OTP channel)", async () => {
+    const request = await freshRequest(); // signerEmail ruth@example.test, no phone anywhere
+    const client = await scopeA.getClient(clientA);
+
+    await sendSignatureRequest(scopeA, request, client!);
+
+    const outbox = await scopeA.listOutbox();
+    const email = outbox.find(
+      (o) =>
+        o.channel === "email" &&
+        o.toAddress === "ruth@example.test" &&
+        o.body.includes("Engagement letter")
+    );
+    expect(email).toBeTruthy();
+    expect(email!.body).not.toContain("/portal/");
+    expect(email!.body).toContain("call the office");
+  });
+});
+
 describe("RLS + scoping", () => {
   it("org B cannot see org A's signature requests", async () => {
     const request = await freshRequest(0);
